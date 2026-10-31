@@ -64,8 +64,15 @@ Linux paths are under `~/.steam/steam/steamapps/common/Mighty No. 9`.
 - [x] Linux AppImage — `dist/Mn9Patcher-x86_64.AppImage`, tested against copies
   of the real Linux INIs; auto-detects `SDL2Linux-MN9*.ini`
 - [x] `--fps N` override (120 sets `UseVsync=False`)
+- [x] Windows aspect — patches `DefaultAspectRatio` in `CookedWindows/MN9Game.upk`
+  (signature-validated; 3D aspect only, GFx fill cave is ELF-only)
+- [x] Windows mouse patch — finds `SDL2.dll` recursively and falls back to
+  scanning every DLL for the `SDL_SetWindowGrab`/`SDL_ShowCursor` exports
+- [x] Windows GUI — 980x700 resizable/scrollable, default 1920x1080, explicit
+  x86-64 (PE32+) build
 - [ ] Test the exe on a real Windows install
-- [ ] Windows mouse-capture behavior (the SDL patch is Linux-only)
+- [ ] Windows GFx UI fill cave — needs the retail `MN9Game.exe` to locate the
+  `MovieImpl::SetViewport` equivalent
 
 ## Stability
 
