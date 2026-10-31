@@ -24,6 +24,7 @@ public sealed class Settings
     public bool Voice;
     public bool Movies;
     public bool MouseFix = false;
+    public bool Laa = false;
     public bool LockConfig = true;
 
     public int Width = 1280;
@@ -323,6 +324,8 @@ public static class Patcher
             log.AppendLine("Config patched.");
             log.AppendLine(MousePatch.Set(gameDir, s.MouseFix));
             log.AppendLine(AspectPatch.Set(gameDir, s.Width, s.Height));
+            log.AppendLine(s.Laa ? LargeAddressAware.Set(gameDir, true)
+                                 : LargeAddressAware.Revert(gameDir));
         }
         catch (Exception ex)
         {
@@ -368,6 +371,7 @@ public static class Patcher
             log.AppendLine("Config restored.");
             log.AppendLine(MousePatch.Set(gameDir, false));
             log.AppendLine(AspectPatch.Revert(gameDir));
+            log.AppendLine(LargeAddressAware.Revert(gameDir));
         }
         catch (Exception ex)
         {
@@ -984,6 +988,84 @@ public static class MousePatch
     }
 }
 
+public static class LargeAddressAware
+{
+    // IMAGE_FILE_LARGE_ADDRESS_AWARE: lets a 32-bit process use up to 4 GB
+    // (instead of 2 GB) on 64-bit Windows.  The retail MN9 game is a 32-bit
+    // UE3 build; this is the closest it can get to a 64-bit address space.
+    private const ushort LaaFlag = 0x0100;
+
+    private static string FindExe(string gameDir) => new[]
+    {
+        Path.Combine(gameDir, "Binaries/Win32/MN9Game.exe"),
+        Path.Combine(gameDir, "Binaries/Win64/MN9Game.exe"),
+        Path.Combine(gameDir, "MN9Game.exe"),
+        Path.Combine(gameDir, "Binaries/MN9Game.exe"),
+    }.FirstOrDefault(File.Exists);
+
+    public static string Set(string gameDir, bool enable)
+    {
+        string exe = FindExe(gameDir);
+        if (exe == null) return "LAA: MN9Game.exe not found";
+
+        try
+        {
+            byte[] data = File.ReadAllBytes(exe);
+            int pe = BitConverter.ToInt32(data, 0x3C);
+            if (pe < 0 || pe + 0x40 > data.Length ||
+                BitConverter.ToUInt32(data, pe) != 0x00004550)
+                return "LAA: not a PE executable";
+
+            int coff = pe + 4;
+            ushort machine = BitConverter.ToUInt16(data, coff);
+            if (machine == 0x8664) return "LAA: game is already 64-bit";
+            if (machine != 0x014C) return $"LAA: unexpected machine 0x{machine:x4}";
+
+            int flagsOff = coff + 18;
+            ushort flags = BitConverter.ToUInt16(data, flagsOff);
+            bool on = (flags & LaaFlag) != 0;
+            if (on == enable)
+                return enable ? "LAA: already on" : "LAA: already off";
+
+            string backup = exe + ".laa.orig";
+            if (!File.Exists(backup)) File.Copy(exe, backup);
+
+            ushort updated = (ushort)(enable ? flags | LaaFlag : flags & ~LaaFlag);
+            BitConverter.GetBytes(updated).CopyTo(data, flagsOff);
+
+            var attrs = File.GetAttributes(exe);
+            if ((attrs & FileAttributes.ReadOnly) != 0)
+                File.SetAttributes(exe, attrs & ~FileAttributes.ReadOnly);
+            File.WriteAllBytes(exe, data);
+            return enable
+                ? "LAA: on (32-bit game can address up to 4 GB)"
+                : "LAA: off";
+        }
+        catch (Exception ex)
+        {
+            return "LAA: " + ex.Message;
+        }
+    }
+
+    public static string Revert(string gameDir)
+    {
+        string exe = FindExe(gameDir);
+        if (exe == null) return "LAA: MN9Game.exe not found";
+        string backup = exe + ".laa.orig";
+        if (!File.Exists(backup)) return "LAA: off";
+        try
+        {
+            File.Copy(backup, exe, overwrite: true);
+            File.Delete(backup);
+            return "LAA: reverted";
+        }
+        catch (Exception ex)
+        {
+            return "LAA: " + ex.Message;
+        }
+    }
+}
+
 public static class AspectPatch
 {
     // Default__MN9GamePlayerCamera.DefaultAspectRatio in a retail MN9Game.upk.
@@ -1329,6 +1411,7 @@ internal static class Cli
             }
         }
         if (args.Contains("--mouse")) s.MouseFix = true;
+        if (args.Contains("--laa")) s.Laa = true;
         if (args.Contains("--fullscreen")) s.Fullscreen = true;
         if (args.Contains("--windowed")) s.Fullscreen = false;
         if (args.Contains("--vsync")) s.Vsync = true;

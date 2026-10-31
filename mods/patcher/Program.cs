@@ -65,6 +65,7 @@ public sealed class MainWindow : Window
     private readonly CheckBox _voice = new() { Content = "Steam voice" };
     private readonly CheckBox _movies = new() { Content = "Play intro movies" };
     private readonly CheckBox _mouse = new() { Content = "Free the mouse (external patch)" };
+    private readonly CheckBox _laa = new() { Content = "Large Address Aware (32-bit game, up to 4 GB)" };
     private readonly CheckBox _lock = new() { Content = "Lock config (stop game-side saving)", IsChecked = true };
 
     private readonly TextBlock _status = new()
@@ -178,7 +179,7 @@ public sealed class MainWindow : Window
         var advanced = Row("Texture pool (MB)", _pool, "Physics substeps", _physics);
 
         var checks = new WrapPanel { Orientation = Orientation.Horizontal };
-        foreach (var c in new[] { _shadows, _bloom, _motion, _shafts, _distortion, _flares, _ao, _mlaa, _msaa, _fullscreen, _vsync, _voice, _movies, _mouse, _lock })
+        foreach (var c in new[] { _shadows, _bloom, _motion, _shafts, _distortion, _flares, _ao, _mlaa, _msaa, _fullscreen, _vsync, _voice, _movies, _mouse, _laa, _lock })
         {
             c.Margin = new Thickness(0, 4, 18, 4);
             checks.Children.Add(c);
@@ -340,6 +341,7 @@ public sealed class MainWindow : Window
             Voice = _voice.IsChecked == true,
             Movies = _movies.IsChecked == true,
             MouseFix = _mouse.IsChecked == true,
+            Laa = _laa.IsChecked == true,
             LockConfig = _lock.IsChecked == true,
             Fps = (int)(_fps.Value ?? 62),
             Pool = (int)(_pool.Value ?? 256),

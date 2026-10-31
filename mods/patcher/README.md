@@ -49,6 +49,7 @@ Settings:
 | Steam voice | Enables Steam voice (off = no voice errors) |
 | Play intro movies | Off = skip startup/loading movies; the `OpDemo` intro stage is untouched |
 | Free the mouse (external patch) | Off by default while the in-game row is prototyped |
+| Large Address Aware | Sets the LAA flag on the 32-bit game exe so it can address up to 4 GB on 64-bit Windows (reversible; does not make it 64-bit) |
 | Lock config | Lock INIs + `SystemData.dat` so the game cannot save settings |
 
 Numeric/choice fields: resolution (16:9, 16:10 and 4:3 presets — 640x360,
@@ -67,6 +68,17 @@ cave is ELF-only for now, so the UI can still letterbox. Picking a 16:9 preset
 reverts both. 16:10 is left un-filled: the engine clamps the wide bucket to
 16:9 before GFx runs, so a 1280x800 window still shows 40 px bars. See
 `mods/aspect_fix/README.md`.
+
+## 32-bit game (Large Address Aware)
+
+The retail Windows `MN9Game.exe` is a 32-bit UE3 build, so Task Manager will
+always show it as 32-bit. It cannot be converted to 64-bit without rebuilding
+the engine/game from source. **Large Address Aware** sets the PE header flag so
+the 32-bit process can address up to 4 GB instead of 2 GB on 64-bit Windows —
+useful for high-resolution textures and 4K shadows. It writes
+`MN9Game.exe.laa.orig` once and Restore puts the original exe back.
+
+The **Linux** build (`MN9Game.bin.x86_64`) is the 64-bit one.
 
 ## Mouse fix
 
@@ -127,6 +139,7 @@ Mn9Patcher --cli --game-dir "/path/to/Mighty No. 9" --fps 120 --res 1280x720
 Mn9Patcher --cli --game-dir "..." --fullscreen          # native size, aspect follows
 Mn9Patcher --cli --game-dir "..." --windowed --no-vsync
 Mn9Patcher --cli --game-dir "..." --msaa --mlaa
+Mn9Patcher --cli --game-dir "..." --laa
 Mn9Patcher --cli --game-dir "..." --restore
 Mn9Patcher --cli --game-dir "..." --mouse
 Mn9Patcher --cli --game-dir "..." --launch

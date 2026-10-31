@@ -70,6 +70,9 @@ Linux paths are under `~/.steam/steam/steamapps/common/Mighty No. 9`.
   scanning every DLL for the `SDL_SetWindowGrab`/`SDL_ShowCursor` exports
 - [x] Windows GUI — 980x700 resizable/scrollable, default 1920x1080, explicit
   x86-64 (PE32+) build
+- [x] Large Address Aware toggle — sets `IMAGE_FILE_LARGE_ADDRESS_AWARE` on the
+  32-bit `MN9Game.exe` (up to 4 GB on 64-bit Windows), reversible via
+  `MN9Game.exe.laa.orig`
 - [ ] Test the exe on a real Windows install
 - [ ] Windows GFx UI fill cave — needs the retail `MN9Game.exe` to locate the
   `MovieImpl::SetViewport` equivalent
