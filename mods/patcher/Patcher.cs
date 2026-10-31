@@ -891,16 +891,38 @@ public static class MousePatch
         }
     }
 
-    private static string SetWindows(string gameDir, bool enable)
+    private static string FindSdlDll(string gameDir)
     {
-        string dll = new[]
+        string[] preferred =
         {
             Path.Combine(gameDir, "Binaries/Win64/SDL2.dll"),
             Path.Combine(gameDir, "Binaries/Win32/SDL2.dll"),
             Path.Combine(gameDir, "SDL2.dll"),
-        }.FirstOrDefault(File.Exists);
+            Path.Combine(gameDir, "MN9Game/Binaries/Win64/SDL2.dll"),
+            Path.Combine(gameDir, "MN9Game/Binaries/Win32/SDL2.dll"),
+            Path.Combine(gameDir, "Engine/Binaries/Win64/SDL2.dll"),
+        };
+        foreach (string p in preferred)
+            if (File.Exists(p)) return p;
 
-        if (dll == null) return "mouse fix: SDL2.dll not found";
+        try
+        {
+            return Directory.EnumerateFiles(gameDir, "SDL2.dll", SearchOption.AllDirectories)
+                .OrderBy(p => p.Count(c => c == Path.DirectorySeparatorChar))
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string SetWindows(string gameDir, bool enable)
+    {
+        string dll = FindSdlDll(gameDir);
+
+        if (dll == null)
+            return "mouse fix: SDL2.dll not found (searched the game folder)";
         string backup = dll + ".orig";
         var wanted = new Dictionary<string, byte[]>
         {
@@ -943,7 +965,9 @@ public static class MousePatch
             hit++;
         }
         if (hit > 0) File.WriteAllBytes(dll, patched);
-        return hit > 0 ? $"mouse patches applied ({hit} functions)" : "mouse fix: no SDL exports found";
+        string rel = Path.GetRelativePath(gameDir, dll);
+        return hit > 0 ? $"mouse patches applied ({hit} functions in {rel})"
+                       : $"mouse fix: no SDL exports found in {rel}";
     }
 }
 
@@ -976,8 +1000,6 @@ public static class AspectPatch
 
     public static string Set(string gameDir, int width, int height)
     {
-        if (!OperatingSystem.IsLinux())
-            return "aspect: Linux only (GFx fill patch not implemented for Windows)";
         if (Patcher.IsGameRunning())
             return "aspect: close the game first";
 
@@ -988,12 +1010,19 @@ public static class AspectPatch
 
             log.AppendLine(PatchUpk(gameDir, (float)aspect));
 
-            // The Scaleform fill cave only helps in the non-wide bucket; 16:10
-            // and wider are still forced to 16:9 by the engine before GFx runs.
-            if (aspect < 1.5)
-                log.AppendLine(PatchMovie(gameDir, enable: true));
+            if (OperatingSystem.IsLinux())
+            {
+                // The Scaleform fill cave only helps in the non-wide bucket;
+                // 16:10 and wider are still forced to 16:9 by the engine
+                // before GFx runs.
+                log.AppendLine(aspect < 1.5
+                    ? PatchMovie(gameDir, enable: true)
+                    : PatchMovie(gameDir, enable: false));
+            }
             else
-                log.AppendLine(PatchMovie(gameDir, enable: false));
+            {
+                log.AppendLine("aspect: 3D aspect set; GFx UI fill is Linux-only");
+            }
 
             return log.ToString().Trim();
         }
@@ -1005,12 +1034,12 @@ public static class AspectPatch
 
     public static string Revert(string gameDir)
     {
-        if (!OperatingSystem.IsLinux()) return "aspect: Linux only";
         try
         {
             var log = new StringBuilder();
             log.AppendLine(PatchUpk(gameDir, 16f / 9f));
-            log.AppendLine(PatchMovie(gameDir, enable: false));
+            if (OperatingSystem.IsLinux())
+                log.AppendLine(PatchMovie(gameDir, enable: false));
             return log.ToString().Trim();
         }
         catch (Exception ex)
@@ -1019,28 +1048,61 @@ public static class AspectPatch
         }
     }
 
+    private static readonly byte[] AspectPrefix =
+        { 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+    private static readonly byte[] AspectSuffix =
+        { 0x7f, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
     private static string PatchUpk(string gameDir, float aspect)
     {
-        string upk = Path.Combine(gameDir, "MN9Game", "CookedLinux", "MN9Game.upk");
-        if (!File.Exists(upk)) return "aspect: MN9Game.upk not found";
+        string upk = new[] { "CookedLinux", "CookedWindows", "CookedPCConsole", "CookedPC" }
+            .Select(d => Path.Combine(gameDir, "MN9Game", d, "MN9Game.upk"))
+            .FirstOrDefault(File.Exists);
+        if (upk == null) return "aspect: MN9Game.upk not found";
 
         byte[] data = File.ReadAllBytes(upk);
-        int off = -1;
+        if (data.Length < 16 || BitConverter.ToUInt32(data, 0) != 0x9E2A83C1)
+            return "aspect: unrecognized MN9Game.upk";
 
-        if (UpkAspectOffset + 4 <= data.Length)
+        int off = -1;
+        bool linux = upk.Contains("CookedLinux", StringComparison.OrdinalIgnoreCase);
+
+        // The fixed offset is only valid for our CookedLinux layout. Validate
+        // the 8-byte prefix so a repacked Windows package cannot be written at
+        // the wrong place.
+        if (linux && UpkAspectOffset + 4 <= data.Length && UpkAspectOffset >= 8)
         {
+            bool prefix = data.AsSpan((int)UpkAspectOffset - 8, 8).SequenceEqual(AspectPrefix);
             float cur = BitConverter.ToSingle(data, (int)UpkAspectOffset);
-            if (cur > 0.5f && cur < 3.0f) off = (int)UpkAspectOffset;
+            if (prefix && cur > 0.5f && cur < 3.0f) off = (int)UpkAspectOffset;
         }
 
         if (off < 0)
         {
+            // The 8-byte prefix alone is ambiguous (other floats share it),
+            // so first try the full 20-byte window including the next name
+            // index, then fall back to a unique 12-byte prefix hit.
+            var exact = new List<int>();
+            var loose = new List<int>();
             foreach (float known in KnownAspects)
             {
-                byte[] pat = BitConverter.GetBytes(known);
-                var hits = Find(data, pat);
-                if (hits.Count == 1) { off = hits[0]; break; }
+                byte[] pfx = new byte[12];
+                AspectPrefix.CopyTo(pfx, 0);
+                BitConverter.GetBytes(known).CopyTo(pfx, 8);
+
+                byte[] full = new byte[20];
+                pfx.CopyTo(full, 0);
+                AspectSuffix.CopyTo(full, 12);
+                exact.AddRange(Find(data, full).Select(h => h + 8));
+                loose.AddRange(Find(data, pfx).Select(h => h + 8));
             }
+            exact = exact.Distinct().OrderBy(h => h).ToList();
+            loose = loose.Distinct().OrderBy(h => h).ToList();
+            if (exact.Count == 1) off = exact[0];
+            else if (loose.Count == 1) off = loose[0];
+            else if (exact.Count > 1 || loose.Count > 1)
+                return $"aspect: ambiguous ({Math.Max(exact.Count, loose.Count)} candidates)";
         }
 
         if (off < 0) return "aspect: DefaultAspectRatio not found";

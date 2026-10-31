@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -84,10 +85,12 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = "Mighty No. 9 Patcher";
-        Width = 760;
-        Height = 820;
-        MinWidth = 680;
-        MinHeight = 640;
+        Width = 980;
+        Height = 700;
+        MinWidth = 760;
+        MinHeight = 520;
+        CanResize = true;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
         _res.ItemsSource = new[]
         {
@@ -228,7 +231,12 @@ public sealed class MainWindow : Window
             },
         };
 
-        Content = new ScrollViewer { Content = body };
+        Content = new ScrollViewer
+        {
+            Content = body,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))

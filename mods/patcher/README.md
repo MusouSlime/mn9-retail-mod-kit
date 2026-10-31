@@ -5,7 +5,8 @@ the loose UE3 config files, backs them up, and can optionally patch the mouse
 capture path. Builds as a Windows `.exe` and a Linux `.AppImage` from the same
 Avalonia code.
 
-No game data is included.
+No game data is included. The Windows release is x86-64 (PE32+); it runs on
+64-bit Windows 10/11.
 
 ## Build
 
@@ -59,11 +60,13 @@ narrower screens add vertical view instead of stretching. 4:3 and 16:10 are
 included in the in-game Screen Size list via the engine resolution list.
 
 For 4:3 / 5:4 presets the patcher also sets
-`Default__MN9GamePlayerCamera.DefaultAspectRatio` in `MN9Game.upk` and turns on
-the Scaleform `SM_ExactFit` fill, so the 16:9 UI fills the window instead of
-letterboxing. Picking a 16:9 preset reverts both. 16:10 is left un-filled: the
-engine clamps the wide bucket to 16:9 before GFx runs, so a 1280x800 window
-still shows 40 px bars. See `mods/aspect_fix/README.md`.
+`Default__MN9GamePlayerCamera.DefaultAspectRatio` in `MN9Game.upk`. On Linux it
+turns on the Scaleform `SM_ExactFit` fill, so the 16:9 UI fills the window
+instead of letterboxing. On Windows the 3D aspect is set, but the GFx fill
+cave is ELF-only for now, so the UI can still letterbox. Picking a 16:9 preset
+reverts both. 16:10 is left un-filled: the engine clamps the wide bucket to
+16:9 before GFx runs, so a 1280x800 window still shows 40 px bars. See
+`mods/aspect_fix/README.md`.
 
 ## Mouse fix
 
@@ -74,7 +77,8 @@ being prototyped. Enable it only if you want the pre-launch binary patch:
   and the function bodies in the bundled `libSDL2-2.0.so.0` (grab, show, relative
   mode, capture, warp). Backups are `.orig` files; Restore reverts them.
 - **Windows:** patches the same exports inside the game's `SDL2.dll`
-  (`Binaries/Win64`, `Win32`, or the game root), with a `.orig` backup.
+  (`Binaries/Win64`, `Win32`, the game root, or anywhere else under the
+  install — the patcher searches recursively), with a `.orig` backup.
 
 Disabling the mouse patch restores only those function bytes, so unrelated
 binary edits (MSAA, Free Mouse, the aspect fill cave) are left alone.
