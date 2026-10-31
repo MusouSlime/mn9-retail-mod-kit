@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using System.Runtime.InteropServices;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -84,7 +85,9 @@ public sealed class MainWindow : Window
 
     public MainWindow()
     {
-        Title = "Mighty No. 9 Patcher";
+        Title = Environment.Is64BitProcess
+            ? "Mighty No. 9 Patcher — 64-bit"
+            : "Mighty No. 9 Patcher — 32-bit";
         Width = 980;
         Height = 700;
         MinWidth = 760;
@@ -201,6 +204,14 @@ public sealed class MainWindow : Window
                     Text = "Pick what you want, then press Apply settings. Config is backed up and locked read-only.",
                     Foreground = Brushes.Gray,
                     TextWrapping = TextWrapping.Wrap,
+                },
+                new TextBlock
+                {
+                    Text = $"{(Environment.Is64BitProcess ? "64-bit" : "32-bit")} · " +
+                           $"{RuntimeInformation.ProcessArchitecture} · " +
+                           $"{RuntimeInformation.OSDescription}",
+                    Foreground = Brushes.Gray,
+                    FontSize = 12,
                 },
                 pathRow,
                 resRow,

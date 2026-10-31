@@ -1264,6 +1264,21 @@ internal static class Cli
 {
     public static int Run(string[] args)
     {
+        if (args.Contains("--diag"))
+        {
+            string diag = $"patcher: {RuntimeInformation.ProcessArchitecture}, " +
+                          $"64-bit={Environment.Is64BitProcess}, " +
+                          $"{RuntimeInformation.FrameworkDescription}, " +
+                          $"{RuntimeInformation.OSDescription}";
+            Console.WriteLine(diag);
+            try
+            {
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "mn9patcher-diag.txt"),
+                                  diag + Environment.NewLine);
+            }
+            catch { }
+            return 0;
+        }
         string game = Arg(args, "--game-dir") ?? Patcher.FindGameDir();
         if (game == null)
         {
