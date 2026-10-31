@@ -907,14 +907,27 @@ public static class MousePatch
 
         try
         {
-            return Directory.EnumerateFiles(gameDir, "SDL2.dll", SearchOption.AllDirectories)
+            string exact = Directory.EnumerateFiles(gameDir, "SDL2.dll", SearchOption.AllDirectories)
                 .OrderBy(p => p.Count(c => c == Path.DirectorySeparatorChar))
                 .FirstOrDefault();
+            if (exact != null) return exact;
+
+            // Some builds rename or relocate the SDL DLL; find the one that
+            // actually exports the functions the mouse patch needs.
+            foreach (string candidate in Directory.EnumerateFiles(gameDir, "*.dll", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var exports = PeExports.Read(File.ReadAllBytes(candidate));
+                    if (exports.ContainsKey("SDL_SetWindowGrab") &&
+                        exports.ContainsKey("SDL_ShowCursor"))
+                        return candidate;
+                }
+                catch { }
+            }
         }
-        catch
-        {
-            return null;
-        }
+        catch { }
+        return null;
     }
 
     private static string SetWindows(string gameDir, bool enable)

@@ -105,7 +105,7 @@ public sealed class MainWindow : Window
             "1920x1080", // 16:9
             "1920x1200", // 16:10
         };
-        _res.SelectedIndex = 3;
+        _res.SelectedIndex = 8;   // 1920x1080 — avoids shrinking the game by default
 
         var browse = new Button { Content = "Browse..." };
         browse.Click += async (_, _) => await Browse();
