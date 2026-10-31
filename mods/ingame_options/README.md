@@ -131,7 +131,11 @@ The cave binary is `free_mouse_cave.bin`, built from `free_mouse_cave.S`.
 
 ## Rebuild the Option GFX
 
-Start from the retail `Option.gfx` and both final scripts:
+The two full frame scripts (`Option_frame_1_free_mouse.as`,
+`Option_frame_6_free_mouse.as`) are decompiled from the retail movie and stay
+in the personal build; they are not committed. Only `prototype.as` (the
+authored row snippets) is in this repo. Start from the retail `Option.gfx` and
+your local copies of both scripts:
 
 ```sh
 java -jar ffdec-cli.jar -replace Option.gfx /tmp/Option_1.gfx \

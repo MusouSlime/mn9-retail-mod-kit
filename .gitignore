@@ -16,3 +16,7 @@ tools/ue3/*/obj/
 *.orig
 .mn9patcher/
 *.log
+
+# retail-derived decompiled scripts stay out of git (kept in the personal build)
+mods/ingame_options/Option_frame_*.as
+mods/ingame_options/boot_skip_frame_*.as
