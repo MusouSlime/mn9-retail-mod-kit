@@ -1,0 +1,18 @@
+# build outputs
+mods/patcher/bin/
+mods/patcher/obj/
+mods/patcher/dist/
+mods/patcher/AppDir/
+tools/ue3/*/bin/
+tools/ue3/*/obj/
+**/*.user
+
+# retail / derived game data — never commit
+*.upk
+*.pak
+*.dat
+*.gfx
+*.swf
+*.orig
+.mn9patcher/
+*.log

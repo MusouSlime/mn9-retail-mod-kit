@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mighty No. 9 Patcher
+Comment=Apply safe graphics profiles to Mighty No. 9
+Exec=Mn9Patcher
+Icon=mn9patcher
+Terminal=false
+Categories=Utility;
