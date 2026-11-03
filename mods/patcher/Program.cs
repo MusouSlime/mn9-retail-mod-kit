@@ -305,8 +305,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.0.4 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.0.4 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.0.5 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.0.5 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;

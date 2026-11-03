@@ -41,8 +41,7 @@ static double g_rate = 10.0;
 static int g_button = 2;             /* SDL_CONTROLLER_BUTTON_X */
 static int g_key = -1;               /* optional toggle scancode */
 static int g_pad = -1;               /* optional controller toggle button */
-static void* g_gc[4];
-static int g_gc_count = 0;
+static int g_fire_held = 0;
 static double g_t0 = 0;
 
 static double now_s(void)
@@ -140,22 +139,9 @@ static void write_controller_fire(unsigned char value)
     }
 }
 
-typedef unsigned char (*GetButtonFn)(void*, int);
-
-static int physical_fire(void)
-{
-    static GetButtonFn get_button = NULL;
-    if (!get_button) get_button = (GetButtonFn)dlsym(RTLD_NEXT, "SDL_GameControllerGetButton");
-    if (!get_button) return 0;
-    for (int i = 0; i < g_gc_count; i++)
-        if (g_gc[i] && get_button(g_gc[i], g_button)) return 1;
-    return 0;
-}
-
 static void apply_fire(void)
 {
-    if (!g_enabled || !g_auto_on) return;
-    if (!physical_fire()) return;
+    if (!g_enabled || !g_auto_on || !g_fire_held) return;
     write_controller_fire(fire_phase() ? 1 : 0);
 }
 
@@ -175,37 +161,6 @@ typedef struct {
 
 typedef int (*PollEventFn)(void*);
 typedef uint32_t (*GetMouseStateFn)(int*, int*);
-typedef void* (*OpenFn)(int);
-typedef void (*CloseFn)(void*);
-
-static void track_close(void** list, int* count, void* handle)
-{
-    for (int i = 0; i < *count; i++) {
-        if (list[i] == handle) {
-            list[i] = list[--(*count)];
-            return;
-        }
-    }
-}
-
-void* SDL_GameControllerOpen(int index)
-{
-    static OpenFn real = NULL;
-    if (!real) real = (OpenFn)dlsym(RTLD_NEXT, "SDL_GameControllerOpen");
-    void* h = real ? real(index) : NULL;
-    if (h && g_gc_count < (int)(sizeof(g_gc) / sizeof(g_gc[0])))
-        g_gc[g_gc_count++] = h;
-    return h;
-}
-
-void SDL_GameControllerClose(void* h)
-{
-    static CloseFn real = NULL;
-    if (!real) real = (CloseFn)dlsym(RTLD_NEXT, "SDL_GameControllerClose");
-    track_close(g_gc, &g_gc_count, h);
-    if (real) real(h);
-}
-
 typedef struct {
     uint32_t type, timestamp;
     int32_t which;
@@ -226,23 +181,27 @@ int SDL_PollEvent(void* ev)
         }
 
         uint32_t type = *(uint32_t*)ev;
-
-        /* Optional pad toggle. Swallow the event so the game's normal
-           binding (Direct Change 3 on R3) does not also fire. */
-        if (g_pad >= 0 && (type == 0x651 || type == 0x652)) {
+        if (type == 0x651 || type == 0x652) {      /* controller button down/up */
             CtrlButtonEvent* c = (CtrlButtonEvent*)ev;
-            if (c->button == (uint8_t)g_pad) {
-                if (type == 0x651) {          /* down */
+            if (c->button == (uint8_t)g_button) {
+                int was = g_fire_held;
+                g_fire_held = (type == 0x651);
+                if (was != g_fire_held)
+                    fprintf(stderr, "[turbo] fire %s\n", g_fire_held ? "held" : "released");
+            }
+
+            if (g_pad >= 0 && c->button == (uint8_t)g_pad) {
+                if (type == 0x651) {               /* down */
                     g_auto_on = !g_auto_on;
                     if (!g_auto_on) clear_fire();
                     fprintf(stderr, "[turbo] auto-fire %s (pad %d)\n",
                             g_auto_on ? "on" : "off", g_pad);
                 }
-                continue;                     /* consume down and up */
+                continue;                          /* consume down and up */
             }
         }
 
-        if (type == 0x300 && g_key >= 0) {    /* SDL_KEYDOWN */
+        if (type == 0x300 && g_key >= 0) {         /* SDL_KEYDOWN */
             KeyEvent* k = (KeyEvent*)ev;
             if (k->scancode == g_key && !k->repeat) {
                 g_auto_on = !g_auto_on;
