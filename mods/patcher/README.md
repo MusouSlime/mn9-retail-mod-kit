@@ -6,17 +6,12 @@ capture path. Builds as a Windows `.exe` and a Linux `.AppImage` from the same
 Avalonia code.
 
 The launcher bundles extracted game UI art and rendered character turntables
-for its interface; it does not include game code or full data packages. That
-art is not committed to git — release binaries include it, and a source build
-runs without it unless you supply `assets/`. The Windows release is x86-64
-(PE32+); it runs on 64-bit Windows 10/11.
-
-This is **v1.0.0**, the first stable release.
+for its interface; it does not include game code or full data packages. The
+Windows release is x86-64 (PE32+); it runs on 64-bit Windows 10/11.
 
 ## Build
 
 ```sh
-./build_mods.sh         # rebuild spawn_override/libpostfx|libaudiofx|libmn9turbo
 ./build_win.sh          # dist/win-x64/Mn9Patcher.exe + dist/Mn9Patcher-win64.zip
 ./build_appimage.sh     # dist/XelLauncher-x86_64.AppImage
 ./build_win.sh linux    # dist/linux-x64/Mn9Patcher (folder build)
@@ -257,7 +252,7 @@ Values: `beck`, `gold`, `retro`, `call`, `ray`.
 
 - **Set character** only writes the config.
 - **Launch with character** writes the config and, on Linux, starts
-  `mods/patcher/spawn_override/mn9-charselect.sh`. The wrapper sets
+  `mods/spawn_override/mn9-charselect.sh`. The wrapper sets
   `MN9_CHARACTER`/`MN9_CHARSEL_CONF` and `LD_PRELOAD`s
   `libmn9spawn.so`, which swaps the player pawn at spawn time.
 - `gold`/`retro` are Beck costumes; `call` swaps both the pawn and
@@ -270,21 +265,22 @@ Values: `beck`, `gold`, `retro`, `call`, `ray`.
 - On Windows the selection is saved for a future native hook; the current
   spawn override is Linux-only.
 
-## Turbo (Linux PC build)
+## Turbo auto-fire (Linux PC build)
 
-Fast-forward for the retail Linux build. The launcher writes
+Holding the game's fire button keeps firing. The launcher writes
 `.mn9charsel/turbo.conf` and the spawn wrapper preloads `libmn9turbo.so`.
 
-- **Toggle** — press the key once for on, again for off.
-- **Hold** — turbo is active only while the key is down.
-- **Speed** — 1.5x, 2x (default) or 3x.
-- **Key** — keyboard key, default `F11`. For a controller, map a button to
-  this key in Steam Input.
+- **Enable turbo auto-fire** — master switch.
+- **Fire button** — X (default), A, B or Y. The left mouse button is handled
+  automatically as well.
+- **Rate** — 6, 8, 10 (default), 12, 15 or 20 taps per second.
+- **Toggle key** — optional keyboard key that turns auto-fire on/off while
+  playing; blank means always on.
 
-The shim scales `AWorldInfo::TimeDilation` on the game thread from the SDL
-event pump. It re-applies after map loads, so turbo survives stage
-transitions. Off by default; Linux PC build only (the Windows launcher has
-no injection shim).
+The shim toggles the fire button in the game's `kog::g_sdlControllers`
+cache at the selected rate while the physical button is held, and gates
+`SDL_GetMouseState` for mouse fire. It does not change game speed. Linux PC
+build only (the Windows launcher has no injection shim).
 
 ## CLI
 
@@ -303,7 +299,7 @@ Mn9Patcher --cli --game-dir "..." --character gold
 Mn9Patcher --cli --game-dir "..." --show-character
 Mn9Patcher --cli --game-dir "..." --character retro --launch-character
 Mn9Patcher --cli --game-dir "..." --character gold --launch
-Mn9Patcher --cli --game-dir "..." --turbo --turbo-mode toggle --turbo-speed 2 --turbo-key F11
+Mn9Patcher --cli --game-dir "..." --turbo --turbo-rate 10 --turbo-button x --turbo-key ""
 Mn9Patcher --cli --game-dir "..." --no-turbo
 ```
 

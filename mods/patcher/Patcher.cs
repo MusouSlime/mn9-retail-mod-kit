@@ -724,16 +724,16 @@ public static class Patcher
         return "Options saved.";
     }
 
-    public static (bool Enabled, string Mode, double Speed, string Key) ReadTurbo(string gameDir)
+    public static (bool Enabled, double Rate, int Button, string Key) ReadTurbo(string gameDir)
     {
         bool enabled = false;
-        string mode = "toggle";
-        double speed = 2.0;
-        string key = "F11";
+        double rate = 10.0;
+        int button = 2;          // SDL X
+        string key = "";         // blank = always on
         try
         {
             string path = Path.Combine(gameDir, ".mn9charsel", "turbo.conf");
-            if (!File.Exists(path)) return (enabled, mode, speed, key);
+            if (!File.Exists(path)) return (enabled, rate, button, key);
             foreach (string line in File.ReadLines(path))
             {
                 string[] parts = line.Split('=', 2);
@@ -741,28 +741,31 @@ public static class Patcher
                 string k = parts[0].Trim();
                 string v = parts[1].Trim();
                 if (k == "enabled") enabled = v is "1" or "true" or "True";
-                else if (k == "mode") mode = v == "hold" ? "hold" : "toggle";
-                else if (k == "speed" &&
-                         double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double sp))
-                    speed = Math.Clamp(sp, 1.05, 5.0);
-                else if (k == "key" && v.Length > 0) key = v;
+                else if (k == "rate" &&
+                         double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv))
+                    rate = Math.Clamp(rv, 2.0, 30.0);
+                else if (k == "button" && int.TryParse(v, out int bv))
+                    button = Math.Clamp(bv, 0, 3);
+                else if (k == "key")
+                    key = v is "none" or "off" or "-" ? "" : v;
             }
         }
         catch { }
-        return (enabled, mode, speed, key);
+        return (enabled, rate, button, key);
     }
 
-    public static string WriteTurbo(string gameDir, bool enabled, string mode, double speed, string key)
+    public static string WriteTurbo(string gameDir, bool enabled, double rate, int button, string key)
     {
         string dir = Path.Combine(gameDir, ".mn9charsel");
         Directory.CreateDirectory(dir);
-        mode = mode == "hold" ? "hold" : "toggle";
-        speed = Math.Clamp(speed, 1.05, 5.0);
-        key = string.IsNullOrWhiteSpace(key) ? "F11" : key.Trim();
+        rate = Math.Clamp(rate, 2.0, 30.0);
+        button = Math.Clamp(button, 0, 3);
+        key = (key ?? "").Trim();
+        if (key is "none" or "off" or "-") key = "";
         File.WriteAllText(Path.Combine(dir, "turbo.conf"),
             $"enabled={(enabled ? 1 : 0)}{Environment.NewLine}" +
-            $"mode={mode}{Environment.NewLine}" +
-            $"speed={speed.ToString("0.0", CultureInfo.InvariantCulture)}{Environment.NewLine}" +
+            $"rate={rate.ToString("0", CultureInfo.InvariantCulture)}{Environment.NewLine}" +
+            $"button={button}{Environment.NewLine}" +
             $"key={key}{Environment.NewLine}");
         return "Turbo saved.";
     }
@@ -944,20 +947,20 @@ if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
 fi
 TURBO="$GAME/.mn9charsel/turbo.conf"
 TLIB="$GAME/.mn9charsel/libmn9turbo.so"
-turbo=0; tmode=toggle; tspeed=2.0; tkey=F11
+turbo=0; trate=10; tbutton=2; tkey=
 if [ -f "$TURBO" ]; then
   turbo="$(sed -n 's/^enabled=//p' "$TURBO" | tail -n1)"
-  tmode="$(sed -n 's/^mode=//p' "$TURBO" | tail -n1)"
-  tspeed="$(sed -n 's/^speed=//p' "$TURBO" | tail -n1)"
+  trate="$(sed -n 's/^rate=//p' "$TURBO" | tail -n1)"
+  tbutton="$(sed -n 's/^button=//p' "$TURBO" | tail -n1)"
   tkey="$(sed -n 's/^key=//p' "$TURBO" | tail -n1)"
 fi
 if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
   ln -sf "$TLIB" "$RUNTIME/libmn9turbo.so"
   PRELOAD="$PRELOAD:$RUNTIME/libmn9turbo.so"
   export MN9_TURBO_ENABLED=1
-  export MN9_TURBO_MODE="${tmode:-toggle}"
-  export MN9_TURBO_SPEED="${tspeed:-2.0}"
-  export MN9_TURBO_KEY="${tkey:-F11}"
+  export MN9_TURBO_RATE="${trate:-10}"
+  export MN9_TURBO_BUTTON="${tbutton:-2}"
+  export MN9_TURBO_KEY="$tkey"
 fi
 # Keep Steam's overlay first so Steam Input and the overlay keep working.
 if [ -n "${LD_PRELOAD:-}" ]; then
@@ -1959,17 +1962,32 @@ internal static class Cli
             Console.WriteLine(Patcher.InstallModFiles(game));
         }
         if (args.Contains("--turbo") || args.Contains("--no-turbo") ||
-            Arg(args, "--turbo-mode") != null || Arg(args, "--turbo-speed") != null ||
+            Arg(args, "--turbo-rate") != null || Arg(args, "--turbo-button") != null ||
             Arg(args, "--turbo-key") != null)
         {
-            var (en, md, sp, ky) = Patcher.ReadTurbo(game);
+            var (en, rate, button, key) = Patcher.ReadTurbo(game);
             if (args.Contains("--turbo")) en = true;
             if (args.Contains("--no-turbo")) en = false;
-            if (Arg(args, "--turbo-mode") is string tm) md = tm;
-            if (Arg(args, "--turbo-speed") is string tsv &&
-                double.TryParse(tsv, NumberStyles.Float, CultureInfo.InvariantCulture, out double spv)) sp = spv;
-            if (Arg(args, "--turbo-key") is string tk) ky = tk;
-            Console.WriteLine(Patcher.WriteTurbo(game, en, md, sp, ky));
+            if (Arg(args, "--turbo-rate") is string trv &&
+                double.TryParse(trv, NumberStyles.Float, CultureInfo.InvariantCulture, out double rv)) rate = rv;
+            if (Arg(args, "--turbo-button") is string tbv)
+            {
+                button = tbv.ToLowerInvariant() switch
+                {
+                    "a" => 0,
+                    "b" => 1,
+                    "x" => 2,
+                    "y" => 3,
+                    _ => int.TryParse(tbv, out int bi) ? Math.Clamp(bi, 0, 3) : button,
+                };
+            }
+            if (Arg(args, "--turbo-key") is string tk) key = tk;
+            Console.WriteLine(Patcher.WriteTurbo(game, en, rate, button, key));
+            Console.WriteLine(Patcher.InstallModFiles(game));
+            return 0;
+        }
+        if (args.Contains("--install-mod-files"))
+        {
             Console.WriteLine(Patcher.InstallModFiles(game));
             return 0;
         }

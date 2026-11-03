@@ -8,7 +8,7 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
-## Xel Launcher 1.0
+## Xel Launcher 1.0.1
 
 The first stable release of the cross-platform launcher, built around the
 retail PC build and the ReXGlue Xbox 360 port.
@@ -22,8 +22,8 @@ retail PC build and the ReXGlue Xbox 360 port.
   Posterize and Retro, plus FXAA. Applied from the first frame.
 - **Audio** — replace the soundtrack from a folder (random/playlist/shuffle),
   SFX pitch, voice mute, ducking, night mode and levels.
-- **Turbo (Linux PC build)** — toggle/hold fast-forward at 1.5x/2x/3x by
-  scaling the engine's `TimeDilation`; survives map loads.
+- **Turbo auto-fire (Linux PC build)** — holding the fire button keeps firing
+  at 6–20 taps per second; optional runtime toggle key, mouse fire included.
 - **Character select** — Beck, Call, Ray, Gold and Retro via a spawn override
   (Linux).
 - **Saves** — timestamped backups, manifests, restore and safe mode.

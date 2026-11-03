@@ -243,20 +243,22 @@ public sealed class MainWindow : Window
         SelectedIndex = 8,
     };
 
-    private readonly CheckBox _turboEnabled = new() { Content = "Enable turbo (fast-forward)" };
-    private readonly ComboBox _turboMode = new()
+    private static readonly int[] TurboRateValues = { 6, 8, 10, 12, 15, 20 };
+    private static readonly int[] TurboButtonValues = { 2, 0, 1, 3 };   // X, A, B, Y
+    private readonly CheckBox _turboEnabled = new() { Content = "Enable turbo auto-fire" };
+    private readonly ComboBox _turboButton = new()
     {
-        Width = 140,
-        ItemsSource = new[] { "Toggle", "Hold" },
+        Width = 160,
+        ItemsSource = new[] { "X (default)", "A", "B", "Y" },
         SelectedIndex = 0,
     };
-    private readonly ComboBox _turboSpeed = new()
+    private readonly ComboBox _turboRate = new()
     {
         Width = 120,
-        ItemsSource = new[] { "1.5x", "2x", "3x" },
-        SelectedIndex = 1,
+        ItemsSource = new[] { "6 Hz", "8 Hz", "10 Hz", "12 Hz", "15 Hz", "20 Hz" },
+        SelectedIndex = 2,
     };
-    private readonly TextBox _turboKey = new() { Width = 100, Watermark = "F11", Text = "F11" };
+    private readonly TextBox _turboKey = new() { Width = 110, Watermark = "blank = always on" };
 
     private readonly TextBlock _characterNote = new()
     {
@@ -302,8 +304,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.0 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.0 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.0.1 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.0.1 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -479,10 +481,10 @@ public sealed class MainWindow : Window
         Tip(_postShader, "Post-process style: Metallic (smooth, default), retro (pixelation/quantisation), Noir, Dot Matrix, Cinematic or Posterize.");
         Tip(_retroTex, "Texture-level retro look: nearest-neighbour filtering and 256px max mips (also lowers VRAM).");
         Tip(_fxaa, "Post-process FXAA. Smooths model and texture edges; works with the selected post style. Costs 8 texture taps.");
-        Tip(_turboEnabled, "Fast-forward for the Linux PC build. Toggle/hold the turbo key to scale the game's TimeDilation; 2x is a safe default.");
-        Tip(_turboMode, "Toggle: press once to turn turbo on, again to turn it off. Hold: turbo is active only while the key is held.");
-        Tip(_turboSpeed, "Fast-forward factor. 1.5x is gentle, 2x is the default, 3x can make physics and collision less predictable.");
-        Tip(_turboKey, "Keyboard key for turbo. For a controller, map a button to this key in Steam Input (e.g. F11).");
+        Tip(_turboEnabled, "Auto-fire for the Linux PC build: holding the fire button keeps shooting.");
+        Tip(_turboButton, "Controller button used for fire. X is the game's default attack button.");
+        Tip(_turboRate, "Auto-fire taps per second. 10 Hz is a good default; too high can drop inputs.");
+        Tip(_turboKey, "Optional keyboard key that turns auto-fire on/off while playing. Leave blank for always on.");
         Tip(_character, "Choose the character used by the spawn override.");
         Tip(setChar, "Save the selection without launching.");
         Tip(launchChar, "Save the selection, install the Steam shim, and launch through Steam.");
@@ -543,14 +545,14 @@ public sealed class MainWindow : Window
             },
         };
 
-        var turbo = Section("Turbo (Linux PC build)",
+        var turbo = Section("Turbo auto-fire (Linux PC build)",
             CheckList(_turboEnabled),
-            Row("Turbo mode", _turboMode, "Speed", _turboSpeed),
-            SimpleRow("Turbo key", _turboKey),
+            Row("Fire button", _turboButton, "Rate", _turboRate),
+            SimpleRow("Toggle key", _turboKey),
             new TextBlock
             {
-                Text = "Fast-forward scales the engine's TimeDilation. Toggle = press once for on/off; Hold = active while the key is down. " +
-                       "Linux PC build only. For a controller, map a button to this key in Steam Input. Physics, timers and animation speed up with the game.",
+                Text = "Holding the fire button taps it at the selected rate. The left mouse button is handled automatically. " +
+                       "The optional toggle key turns auto-fire on/off at runtime; blank means always on. Linux PC build only.",
                 Foreground = Brushes.Gray,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -875,10 +877,11 @@ public sealed class MainWindow : Window
 
     private void SyncTurbo(string dir)
     {
-        var (enabled, mode, speed, key) = Patcher.ReadTurbo(dir ?? "");
+        var (enabled, rate, button, key) = Patcher.ReadTurbo(dir ?? "");
         _turboEnabled.IsChecked = enabled;
-        _turboMode.SelectedIndex = mode == "hold" ? 1 : 0;
-        _turboSpeed.SelectedIndex = Math.Abs(speed - 1.5) < 0.01 ? 0 : Math.Abs(speed - 3.0) < 0.01 ? 2 : 1;
+        _turboRate.SelectedIndex = NearestIndex(TurboRateValues, (int)Math.Round(rate));
+        int bi = Array.IndexOf(TurboButtonValues, button);
+        _turboButton.SelectedIndex = bi >= 0 ? bi : 0;
         _turboKey.Text = key;
     }
 
@@ -1057,9 +1060,10 @@ public sealed class MainWindow : Window
         string portApplied = Port.Apply(CollectPort());
         string character = Patcher.SetCharacter(dir, SelectedCharacter());
         SaveOptions(dir);
-        double turboSpeed = _turboSpeed.SelectedIndex switch { 0 => 1.5, 2 => 3.0, _ => 2.0 };
+        int turboRate = TurboRateValues[Math.Clamp(_turboRate.SelectedIndex, 0, TurboRateValues.Length - 1)];
+        int turboButton = TurboButtonValues[Math.Clamp(_turboButton.SelectedIndex, 0, TurboButtonValues.Length - 1)];
         string turboSaved = Patcher.WriteTurbo(dir, _turboEnabled.IsChecked == true,
-            _turboMode.SelectedIndex == 1 ? "hold" : "toggle", turboSpeed, _turboKey.Text ?? "F11");
+            turboRate, turboButton, _turboKey.Text ?? "");
         string install = Patcher.InstallModFiles(dir);
         _status.Text = applied + Environment.NewLine + portApplied + Environment.NewLine +
                        character + Environment.NewLine + turboSaved + Environment.NewLine + install;
