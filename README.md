@@ -92,6 +92,11 @@ scripts (`mods/ingame_options/pack_swf.py`, aspect/HUD tooling).
 - Windows binary mods (aspect fill, HUD corners, Cursor Hold) are Linux-only;
   the Windows build applies config changes and the SDL mouse patch only.
 
+## Bonus releases
+
+- **Mega Man 1: Beck — WIP bonus** — [IPS + notes](bonus/mm1-beck/README.md).
+  A Mega Man 1 (NES) romhack, separate from the MN9 patcher.
+
 ## License
 
 MIT. Mighty No. 9 is © 2016 Deep Silver / Comcept / Inti Creates. This project
