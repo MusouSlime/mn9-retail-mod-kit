@@ -245,6 +245,7 @@ public sealed class MainWindow : Window
 
     private static readonly int[] TurboRateValues = { 6, 8, 10, 12, 15, 20 };
     private static readonly int[] TurboButtonValues = { 2, 0, 1, 3 };   // X, A, B, Y
+    private static readonly int[] TurboPadValues = { -1, 8 };           // none, R3
     private readonly CheckBox _turboEnabled = new() { Content = "Enable turbo auto-fire" };
     private readonly ComboBox _turboButton = new()
     {
@@ -257,6 +258,12 @@ public sealed class MainWindow : Window
         Width = 120,
         ItemsSource = new[] { "6 Hz", "8 Hz", "10 Hz", "12 Hz", "15 Hz", "20 Hz" },
         SelectedIndex = 2,
+    };
+    private readonly ComboBox _turboPad = new()
+    {
+        Width = 190,
+        ItemsSource = new[] { "None", "R3 (Direct Change 3)" },
+        SelectedIndex = 0,
     };
     private readonly TextBox _turboKey = new() { Width = 110, Watermark = "blank = always on" };
 
@@ -304,8 +311,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.0.1 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.0.1 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.0.2 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.0.2 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -484,6 +491,7 @@ public sealed class MainWindow : Window
         Tip(_turboEnabled, "Auto-fire for the Linux PC build: holding the fire button keeps shooting.");
         Tip(_turboButton, "Controller button used for fire. X is the game's default attack button.");
         Tip(_turboRate, "Auto-fire taps per second. 10 Hz is a good default; too high can drop inputs.");
+        Tip(_turboPad, "Use R3 as the auto-fire toggle. R3 stops performing Direct Change 3 while selected.");
         Tip(_turboKey, "Optional keyboard key that turns auto-fire on/off while playing. Leave blank for always on.");
         Tip(_character, "Choose the character used by the spawn override.");
         Tip(setChar, "Save the selection without launching.");
@@ -548,11 +556,13 @@ public sealed class MainWindow : Window
         var turbo = Section("Turbo auto-fire (Linux PC build)",
             CheckList(_turboEnabled),
             Row("Fire button", _turboButton, "Rate", _turboRate),
+            SimpleRow("Pad toggle", _turboPad),
             SimpleRow("Toggle key", _turboKey),
             new TextBlock
             {
                 Text = "Holding the fire button taps it at the selected rate. The left mouse button is handled automatically. " +
-                       "The optional toggle key turns auto-fire on/off at runtime; blank means always on. Linux PC build only.",
+                       "Pad toggle R3 stops doing Direct Change 3 and turns auto-fire on/off instead. " +
+                       "The optional toggle key does the same; blank means always on. Linux PC build only.",
                 Foreground = Brushes.Gray,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -877,11 +887,13 @@ public sealed class MainWindow : Window
 
     private void SyncTurbo(string dir)
     {
-        var (enabled, rate, button, key) = Patcher.ReadTurbo(dir ?? "");
+        var (enabled, rate, button, key, pad) = Patcher.ReadTurbo(dir ?? "");
         _turboEnabled.IsChecked = enabled;
         _turboRate.SelectedIndex = NearestIndex(TurboRateValues, (int)Math.Round(rate));
         int bi = Array.IndexOf(TurboButtonValues, button);
         _turboButton.SelectedIndex = bi >= 0 ? bi : 0;
+        int pi = Array.IndexOf(TurboPadValues, pad);
+        _turboPad.SelectedIndex = pi >= 0 ? pi : 0;
         _turboKey.Text = key;
     }
 
@@ -1062,8 +1074,9 @@ public sealed class MainWindow : Window
         SaveOptions(dir);
         int turboRate = TurboRateValues[Math.Clamp(_turboRate.SelectedIndex, 0, TurboRateValues.Length - 1)];
         int turboButton = TurboButtonValues[Math.Clamp(_turboButton.SelectedIndex, 0, TurboButtonValues.Length - 1)];
+        int turboPad = TurboPadValues[Math.Clamp(_turboPad.SelectedIndex, 0, TurboPadValues.Length - 1)];
         string turboSaved = Patcher.WriteTurbo(dir, _turboEnabled.IsChecked == true,
-            turboRate, turboButton, _turboKey.Text ?? "");
+            turboRate, turboButton, _turboKey.Text ?? "", turboPad);
         string install = Patcher.InstallModFiles(dir);
         _status.Text = applied + Environment.NewLine + portApplied + Environment.NewLine +
                        character + Environment.NewLine + turboSaved + Environment.NewLine + install;

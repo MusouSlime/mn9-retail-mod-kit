@@ -105,11 +105,12 @@ if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
 fi
 TURBO="$GAME/.mn9charsel/turbo.conf"
 TLIB="$HERE/libmn9turbo.so"
-turbo=0; trate=10; tbutton=2; tkey=
+turbo=0; trate=10; tbutton=2; tpad=-1; tkey=
 if [ -f "$TURBO" ]; then
   turbo="$(sed -n 's/^enabled=//p' "$TURBO" | tail -n1)"
   trate="$(sed -n 's/^rate=//p' "$TURBO" | tail -n1)"
   tbutton="$(sed -n 's/^button=//p' "$TURBO" | tail -n1)"
+  tpad="$(sed -n 's/^pad=//p' "$TURBO" | tail -n1)"
   tkey="$(sed -n 's/^key=//p' "$TURBO" | tail -n1)"
 fi
 if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
@@ -118,6 +119,7 @@ if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
   export MN9_TURBO_ENABLED=1
   export MN9_TURBO_RATE="${trate:-10}"
   export MN9_TURBO_BUTTON="${tbutton:-2}"
+  export MN9_TURBO_PAD="${tpad:--1}"
   export MN9_TURBO_KEY="$tkey"
 fi
 # Keep Steam's overlay first so Steam Input and the overlay keep working.

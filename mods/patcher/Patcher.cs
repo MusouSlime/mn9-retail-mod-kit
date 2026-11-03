@@ -724,16 +724,17 @@ public static class Patcher
         return "Options saved.";
     }
 
-    public static (bool Enabled, double Rate, int Button, string Key) ReadTurbo(string gameDir)
+    public static (bool Enabled, double Rate, int Button, string Key, int Pad) ReadTurbo(string gameDir)
     {
         bool enabled = false;
         double rate = 10.0;
         int button = 2;          // SDL X
         string key = "";         // blank = always on
+        int pad = -1;            // -1 = no controller toggle
         try
         {
             string path = Path.Combine(gameDir, ".mn9charsel", "turbo.conf");
-            if (!File.Exists(path)) return (enabled, rate, button, key);
+            if (!File.Exists(path)) return (enabled, rate, button, key, pad);
             foreach (string line in File.ReadLines(path))
             {
                 string[] parts = line.Split('=', 2);
@@ -748,24 +749,28 @@ public static class Patcher
                     button = Math.Clamp(bv, 0, 3);
                 else if (k == "key")
                     key = v is "none" or "off" or "-" ? "" : v;
+                else if (k == "pad" && int.TryParse(v, out int pv))
+                    pad = pv is >= -1 and <= 19 ? pv : -1;
             }
         }
         catch { }
-        return (enabled, rate, button, key);
+        return (enabled, rate, button, key, pad);
     }
 
-    public static string WriteTurbo(string gameDir, bool enabled, double rate, int button, string key)
+    public static string WriteTurbo(string gameDir, bool enabled, double rate, int button, string key, int pad)
     {
         string dir = Path.Combine(gameDir, ".mn9charsel");
         Directory.CreateDirectory(dir);
         rate = Math.Clamp(rate, 2.0, 30.0);
         button = Math.Clamp(button, 0, 3);
+        pad = pad is >= -1 and <= 19 ? pad : -1;
         key = (key ?? "").Trim();
         if (key is "none" or "off" or "-") key = "";
         File.WriteAllText(Path.Combine(dir, "turbo.conf"),
             $"enabled={(enabled ? 1 : 0)}{Environment.NewLine}" +
             $"rate={rate.ToString("0", CultureInfo.InvariantCulture)}{Environment.NewLine}" +
             $"button={button}{Environment.NewLine}" +
+            $"pad={pad}{Environment.NewLine}" +
             $"key={key}{Environment.NewLine}");
         return "Turbo saved.";
     }
@@ -947,11 +952,12 @@ if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
 fi
 TURBO="$GAME/.mn9charsel/turbo.conf"
 TLIB="$GAME/.mn9charsel/libmn9turbo.so"
-turbo=0; trate=10; tbutton=2; tkey=
+turbo=0; trate=10; tbutton=2; tpad=-1; tkey=
 if [ -f "$TURBO" ]; then
   turbo="$(sed -n 's/^enabled=//p' "$TURBO" | tail -n1)"
   trate="$(sed -n 's/^rate=//p' "$TURBO" | tail -n1)"
   tbutton="$(sed -n 's/^button=//p' "$TURBO" | tail -n1)"
+  tpad="$(sed -n 's/^pad=//p' "$TURBO" | tail -n1)"
   tkey="$(sed -n 's/^key=//p' "$TURBO" | tail -n1)"
 fi
 if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
@@ -960,6 +966,7 @@ if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
   export MN9_TURBO_ENABLED=1
   export MN9_TURBO_RATE="${trate:-10}"
   export MN9_TURBO_BUTTON="${tbutton:-2}"
+  export MN9_TURBO_PAD="${tpad:--1}"
   export MN9_TURBO_KEY="$tkey"
 fi
 # Keep Steam's overlay first so Steam Input and the overlay keep working.
@@ -1963,9 +1970,9 @@ internal static class Cli
         }
         if (args.Contains("--turbo") || args.Contains("--no-turbo") ||
             Arg(args, "--turbo-rate") != null || Arg(args, "--turbo-button") != null ||
-            Arg(args, "--turbo-key") != null)
+            Arg(args, "--turbo-pad") != null || Arg(args, "--turbo-key") != null)
         {
-            var (en, rate, button, key) = Patcher.ReadTurbo(game);
+            var (en, rate, button, key, pad) = Patcher.ReadTurbo(game);
             if (args.Contains("--turbo")) en = true;
             if (args.Contains("--no-turbo")) en = false;
             if (Arg(args, "--turbo-rate") is string trv &&
@@ -1981,8 +1988,19 @@ internal static class Cli
                     _ => int.TryParse(tbv, out int bi) ? Math.Clamp(bi, 0, 3) : button,
                 };
             }
+            if (Arg(args, "--turbo-pad") is string tpv)
+            {
+                pad = tpv.ToLowerInvariant() switch
+                {
+                    "none" or "off" or "-" => -1,
+                    "r3" => 8,
+                    "l3" => 7,
+                    "back" => 4,
+                    _ => int.TryParse(tpv, out int pi) ? (pi is >= -1 and <= 19 ? pi : pad) : pad,
+                };
+            }
             if (Arg(args, "--turbo-key") is string tk) key = tk;
-            Console.WriteLine(Patcher.WriteTurbo(game, en, rate, button, key));
+            Console.WriteLine(Patcher.WriteTurbo(game, en, rate, button, key, pad));
             Console.WriteLine(Patcher.InstallModFiles(game));
             return 0;
         }

@@ -274,6 +274,8 @@ Holding the game's fire button keeps firing. The launcher writes
 - **Fire button** — X (default), A, B or Y. The left mouse button is handled
   automatically as well.
 - **Rate** — 6, 8, 10 (default), 12, 15 or 20 taps per second.
+- **Pad toggle** — optionally reassign **R3 (Direct Change 3)** to turn
+  auto-fire on/off. While selected, R3 no longer performs Direct Change 3.
 - **Toggle key** — optional keyboard key that turns auto-fire on/off while
   playing; blank means always on.
 
@@ -299,7 +301,7 @@ Mn9Patcher --cli --game-dir "..." --character gold
 Mn9Patcher --cli --game-dir "..." --show-character
 Mn9Patcher --cli --game-dir "..." --character retro --launch-character
 Mn9Patcher --cli --game-dir "..." --character gold --launch
-Mn9Patcher --cli --game-dir "..." --turbo --turbo-rate 10 --turbo-button x --turbo-key ""
+Mn9Patcher --cli --game-dir "..." --turbo --turbo-rate 10 --turbo-button x --turbo-pad r3 --turbo-key ""
 Mn9Patcher --cli --game-dir "..." --no-turbo
 ```
 

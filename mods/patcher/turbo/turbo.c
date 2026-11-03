@@ -40,6 +40,7 @@ static int g_auto_on = 1;
 static double g_rate = 10.0;
 static int g_button = 2;             /* SDL_CONTROLLER_BUTTON_X */
 static int g_key = -1;               /* optional toggle scancode */
+static int g_pad = -1;               /* optional controller toggle button */
 static void* g_gc[4];
 static int g_gc_count = 0;
 static double g_t0 = 0;
@@ -107,6 +108,10 @@ static void init_once(void)
 
     g_key = name_to_scancode(getenv("MN9_TURBO_KEY"));
 
+    const char* p = getenv("MN9_TURBO_PAD");
+    if (p && *p) g_pad = atoi(p);
+    if (g_pad < -1 || g_pad > 19) g_pad = -1;
+
     uintptr_t base = 0;
     if (dl_iterate_phdr(phdr_cb, &base) > 0) {
         g_base = base;
@@ -114,8 +119,8 @@ static void init_once(void)
     }
 
     if (g_enabled)
-        fprintf(stderr, "[turbo] auto-fire enabled rate=%.0fHz button=%d key=%s\n",
-                g_rate, g_button, g_key >= 0 ? "on" : "off");
+        fprintf(stderr, "[turbo] auto-fire enabled rate=%.0fHz button=%d pad=%d key=%s\n",
+                g_rate, g_button, g_pad, g_key >= 0 ? "on" : "off");
 }
 
 static int fire_phase(void)
@@ -201,24 +206,54 @@ void SDL_GameControllerClose(void* h)
     if (real) real(h);
 }
 
+typedef struct {
+    uint32_t type, timestamp;
+    int32_t which;
+    uint8_t button, state, pad1, pad2;
+} CtrlButtonEvent;
+
 int SDL_PollEvent(void* ev)
 {
     static PollEventFn real = NULL;
     if (!real) real = (PollEventFn)dlsym(RTLD_NEXT, "SDL_PollEvent");
-    int r = real ? real(ev) : 0;
     if (!g_inited) init_once();
 
-    if (r && ev && *(uint32_t*)ev == 0x300 && g_key >= 0) {   /* SDL_KEYDOWN */
-        KeyEvent* k = (KeyEvent*)ev;
-        if (k->scancode == g_key && !k->repeat) {
-            g_auto_on = !g_auto_on;
-            if (!g_auto_on) clear_fire();
-            fprintf(stderr, "[turbo] auto-fire %s\n", g_auto_on ? "on" : "off");
+    for (;;) {
+        int r = real ? real(ev) : 0;
+        if (!r) {
+            apply_fire();
+            return 0;
         }
-    }
 
-    apply_fire();
-    return r;
+        uint32_t type = *(uint32_t*)ev;
+
+        /* Optional pad toggle. Swallow the event so the game's normal
+           binding (Direct Change 3 on R3) does not also fire. */
+        if (g_pad >= 0 && (type == 0x653 || type == 0x654)) {
+            CtrlButtonEvent* c = (CtrlButtonEvent*)ev;
+            if (c->button == (uint8_t)g_pad) {
+                if (type == 0x653) {          /* down */
+                    g_auto_on = !g_auto_on;
+                    if (!g_auto_on) clear_fire();
+                    fprintf(stderr, "[turbo] auto-fire %s (pad %d)\n",
+                            g_auto_on ? "on" : "off", g_pad);
+                }
+                continue;                     /* consume down and up */
+            }
+        }
+
+        if (type == 0x300 && g_key >= 0) {    /* SDL_KEYDOWN */
+            KeyEvent* k = (KeyEvent*)ev;
+            if (k->scancode == g_key && !k->repeat) {
+                g_auto_on = !g_auto_on;
+                if (!g_auto_on) clear_fire();
+                fprintf(stderr, "[turbo] auto-fire %s (key)\n", g_auto_on ? "on" : "off");
+            }
+        }
+
+        apply_fire();
+        return r;
+    }
 }
 
 uint32_t SDL_GetMouseState(int* x, int* y)
