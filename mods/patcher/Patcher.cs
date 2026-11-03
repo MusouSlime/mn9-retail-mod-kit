@@ -1018,12 +1018,23 @@ exec "$HERE/MN9Game.bin.x86_64.real" "$@"
     {
         string bin = Path.Combine(gameDir, "Binaries", "Linux", "MN9Game.bin.x86_64");
         string real = bin + ".real";
-        if (!File.Exists(real)) return "Binary shim is not installed.";
+        string orig = bin + ".orig";
         try
         {
-            if (IsBinaryShim(bin)) File.Delete(bin);
-            File.Move(real, bin, overwrite: true);
-            return "Game binary restored.";
+            if (File.Exists(real))
+            {
+                if (File.Exists(orig))
+                    File.Copy(orig, real, overwrite: true);
+                if (IsBinaryShim(bin)) File.Delete(bin);
+                File.Move(real, bin, overwrite: true);
+                return "Game binary restored.";
+            }
+            if (File.Exists(orig) && File.Exists(bin) && !IsBinaryShim(bin))
+            {
+                File.Copy(orig, bin, overwrite: true);
+                return "Game binary restored from backup.";
+            }
+            return "Binary shim is not installed.";
         }
         catch (Exception ex)
         {
@@ -1345,19 +1356,22 @@ public static class MousePatch
     private static string SetLinux(string gameDir, bool enable)
     {
         var log = new StringBuilder();
-        string game = Path.Combine(gameDir, "Binaries/Linux/MN9Game.bin.x86_64");
+        string bin = Path.Combine(gameDir, "Binaries/Linux/MN9Game.bin.x86_64");
+        string real = bin + ".real";
+        string game = File.Exists(real) ? real : bin;
+        string backup = File.Exists(real) ? bin + ".orig" : null;
         string sdl = Path.Combine(gameDir, "Binaries/Linux/lib64/libSDL2-2.0.so.0");
 
-        PatchFile(game, LinuxGame, enable, log);
+        PatchFile(game, LinuxGame, enable, log, backup);
         PatchFile(sdl, LinuxSdl, enable, log);
         return log.Length == 0 ? (enable ? "mouse fix on" : "mouse fix off") : log.ToString().Trim();
     }
 
     private static void PatchFile(string path, (long Offset, string Orig, string Patch, string Note)[] patches,
-                                  bool enable, StringBuilder log)
+                                  bool enable, StringBuilder log, string backupOverride = null)
     {
         if (!File.Exists(path)) return;
-        string backup = path + ".orig";
+        string backup = backupOverride ?? (path + ".orig");
         if (enable)
         {
             if (!File.Exists(backup)) File.Copy(path, backup);
@@ -1724,11 +1738,13 @@ public static class AspectPatch
     private static string PatchMovie(string gameDir, bool enable)
     {
         string bin = Path.Combine(gameDir, "Binaries/Linux/MN9Game.bin.x86_64");
+        string real = bin + ".real";
+        if (File.Exists(real)) bin = real;
         if (!File.Exists(bin)) return "aspect: game binary not found";
 
         byte[] data = File.ReadAllBytes(bin);
+        if (data.Length < SiteOff + 5) return "aspect: binary too small for UI fill";
         bool patched = data[SiteOff] == 0xE9 &&
-                       SiteOff + 5 <= data.Length &&
                        SiteVa + 5 + BitConverter.ToInt32(data, (int)SiteOff + 1) == CaveVa;
 
         if (enable == patched)
