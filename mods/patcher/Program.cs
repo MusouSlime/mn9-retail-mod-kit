@@ -305,8 +305,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.0.6 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.0.6 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.0.7 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.0.7 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -370,9 +370,7 @@ public sealed class MainWindow : Window
         var launchSteam = new Button { Content = "Launch Steam version" };
         launchSteam.Click += (_, _) =>
         {
-            SaveAudio();
-            _status.Text = "Applying PC settings and launching Steam...";
-            Apply();
+            _status.Text = "Launching the PC build through Steam...";
             string msg = Port.LaunchPc();
             _status.Text = msg;
             if (msg.Contains("Launched", StringComparison.OrdinalIgnoreCase))
