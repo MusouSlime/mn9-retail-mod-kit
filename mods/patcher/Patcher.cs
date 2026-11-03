@@ -969,7 +969,19 @@ if [ -n "${LD_PRELOAD:-}" ]; then
 else
   export LD_PRELOAD="$PRELOAD"
 fi
-exec "$HERE/MN9Game.bin.x86_64.real" "$@"
+if [ "$#" -gt 0 ]; then
+  exec "$HERE/MN9Game.bin.x86_64.real" "$@"
+fi
+START_MAP=""
+if [ -f "$GAME/.mn9charsel/start_map" ]; then
+  START_MAP="$(head -n1 "$GAME/.mn9charsel/start_map" | tr -d '[:space:]')"
+  rm -f "$GAME/.mn9charsel/start_map"
+fi
+if [ -n "$START_MAP" ]; then
+  exec "$HERE/MN9Game.bin.x86_64.real" "$START_MAP"
+else
+  exec "$HERE/MN9Game.bin.x86_64.real"
+fi
 """;
 
     private static bool IsBinaryShim(string path)
@@ -996,21 +1008,23 @@ exec "$HERE/MN9Game.bin.x86_64.real" "$@"
         }
         else if (!IsBinaryShim(bin))
         {
-            File.Copy(bin, real, overwrite: true);
+            InstallFile(bin, real);
         }
 
-        File.WriteAllText(bin, BinaryShim);
+        string tmp = bin + ".new";
+        File.WriteAllText(tmp, BinaryShim);
         try
         {
             if (OperatingSystem.IsLinux())
             {
-                File.SetUnixFileMode(bin,
+                File.SetUnixFileMode(tmp,
                     UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                     UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
                     UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
             }
         }
         catch { }
+        File.Move(tmp, bin, true);
         return null;
     }
 
@@ -1042,15 +1056,30 @@ exec "$HERE/MN9Game.bin.x86_64.real" "$@"
         }
     }
 
+    // Replace a file by renaming a complete temporary copy over it.  Plain
+    // File.Copy/cp truncates the destination in place; if the game is running,
+    // its preloaded .so stays mapped to that inode and starts executing the
+    // half-written library.  rename(2) keeps the old inode alive for the
+    // running process and switches new launches to the new file.
+    private static void InstallFile(string source, string dest)
+    {
+        string? dir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        string tmp = dest + ".new";
+        File.Copy(source, tmp, true);
+        try { File.SetLastWriteTimeUtc(tmp, File.GetLastWriteTimeUtc(source)); } catch { }
+        File.Move(tmp, dest, true);
+    }
+
     private static string InstallCharacterWrapper(string gameDir, string source)
     {
         string destDir = Path.Combine(gameDir, ".mn9charsel");
         Directory.CreateDirectory(destDir);
         string dest = Path.Combine(destDir, "mn9-charselect.sh");
-        File.Copy(source, dest, true);
+        InstallFile(source, dest);
         string lib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9spawn.so");
         if (File.Exists(lib))
-            File.Copy(lib, Path.Combine(destDir, "libmn9spawn.so"), true);
+            InstallFile(lib, Path.Combine(destDir, "libmn9spawn.so"));
         string fx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libpostfx.so");
         if (File.Exists(fx))
         {
@@ -1060,11 +1089,11 @@ exec "$HERE/MN9Game.bin.x86_64.real" "$@"
             string destFx = Path.Combine(destDir, "libpostfx.so");
             bool newer = !File.Exists(destFx) ||
                          File.GetLastWriteTimeUtc(fx) > File.GetLastWriteTimeUtc(destFx);
-            if (newer) File.Copy(fx, destFx, true);
+            if (newer) InstallFile(fx, destFx);
         }
         string afx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libaudiofx.so");
         if (File.Exists(afx))
-            File.Copy(afx, Path.Combine(destDir, "libaudiofx.so"), true);
+            InstallFile(afx, Path.Combine(destDir, "libaudiofx.so"));
         string tlib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9turbo.so");
         if (File.Exists(tlib))
             File.Copy(tlib, Path.Combine(destDir, "libmn9turbo.so"), true);

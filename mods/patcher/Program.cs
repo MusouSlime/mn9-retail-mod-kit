@@ -208,6 +208,13 @@ public sealed class MainWindow : Window
         ItemsSource = new[] { "Game voice", "Mute voice (keep subtitles)" },
         SelectedIndex = 0,
     };
+    private readonly ComboBox _auVoicePitch = new()
+    {
+        Width = 240,
+        ItemsSource = new[] { "Off (1.0x)", "Deep (0.85x)", "High (1.15x)", "Random (±10%)" },
+        SelectedIndex = 0,
+    };
+    private readonly CheckBox _auVoiceRandom = new() { Content = "Randomize dialog (shuffle voice lines)" };
     private readonly ComboBox _auMusicGain = GainBox();
     private readonly ComboBox _auSfxGain = GainBox();
     private readonly ComboBox _auVoiceGain = GainBox();
@@ -305,8 +312,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.0.7 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.0.7 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.1.0 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.1.0 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -370,6 +377,7 @@ public sealed class MainWindow : Window
         var launchSteam = new Button { Content = "Launch Steam version" };
         launchSteam.Click += (_, _) =>
         {
+            SaveAudio(installMods: false);
             _status.Text = "Launching the PC build through Steam...";
             string msg = Port.LaunchPc();
             _status.Text = msg;
@@ -392,6 +400,7 @@ public sealed class MainWindow : Window
         {
             string dir = CurrentDir();
             if (dir == null) return;
+            SaveAudio(installMods: false);
             SaveOptions(dir);
             _status.Text = "Launching...";
             string msg = Patcher.LaunchCharacter(dir, SelectedCharacter());
@@ -696,11 +705,53 @@ public sealed class MainWindow : Window
             },
         };
 
+        var testStage = new ComboBox
+        {
+            MinWidth = 230,
+            ItemsSource = new[]
+            {
+                "Map11_OIL_Persistent00",
+                "Map05_WWB_Persistent00",
+                "Map09_RT_Persistent00",
+                "Map10_Tutorial_Persistent00",
+                "Map12_WH_Persistent00",
+                "Map13_HighWay_Persistent00",
+                "Map14_Factory_Persistent00",
+                "Map15_COLO_Persistent00",
+            },
+            SelectedIndex = 0,
+        };
+        var launchStage = new Button { Content = "Launch stage" };
+        launchStage.Click += (_, _) =>
+        {
+            string dir = CurrentDir();
+            if (dir == null) return;
+            string map = testStage.SelectedItem as string ?? "";
+            if (string.IsNullOrEmpty(map)) return;
+            SaveAudio(installMods: false);
+            string stageDir = Path.Combine(dir, ".mn9charsel");
+            Directory.CreateDirectory(stageDir);
+            File.WriteAllText(Path.Combine(stageDir, "start_map"), map + Environment.NewLine);
+            _status.Text = Patcher.InstallModFiles(dir) + " Launching " + map + "...";
+            string msg = Port.LaunchPc();
+            _status.Text = msg;
+            if (msg.Contains("Launched", StringComparison.OrdinalIgnoreCase))
+                WindowState = WindowState.Minimized;
+        };
+        foreach (var b in new[] { launchStage })
+        {
+            b.Background = new SolidColorBrush(Color.Parse("#14283D"));
+            b.Foreground = Brushes.White;
+            b.CornerRadius = new CornerRadius(6);
+        }
+        Tip(testStage, "One-shot test launch: skips the title and stage-select menus.");
+        Tip(launchStage, "Install the shim, write the stage to .mn9charsel/start_map, and launch directly into it.");
+
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            Children = { apply, restore, launch, launchSteam },
+            Children = { apply, restore, launch, launchSteam, testStage, launchStage },
         };
 
         var bottom = new StackPanel
@@ -1138,7 +1189,8 @@ public sealed class MainWindow : Window
                     CheckList(_auNight)),
                 Section("Dialog",
                     SimpleRow("Voice", _auVoice),
-                    CheckList(_auDuck),
+                    SimpleRow("Pitch", _auVoicePitch),
+                    CheckList(_auVoiceRandom, _auDuck),
                     voiceNote),
                 Section("Levels",
                     Row("Music", _auMusicGain, "SFX", _auSfxGain),
@@ -1325,12 +1377,16 @@ public sealed class MainWindow : Window
         _auNight.IsChecked = a.Night;
         _auSfxPitch.SelectedIndex = a.SfxPitch switch { "0.05" => 1, "0.10" => 2, "0.20" => 3, _ => 0 };
         _auVoice.SelectedIndex = a.Voice == "mute" ? 1 : 0;
+        _auVoicePitch.SelectedIndex = a.VoicePitchRand != "0" ? 3
+            : a.VoicePitch == "0.85" ? 1
+            : a.VoicePitch == "1.15" ? 2 : 0;
+        _auVoiceRandom.IsChecked = a.VoiceRandom;
         _auMusicGain.SelectedIndex = GainIndex(a.MusicGain);
         _auSfxGain.SelectedIndex = GainIndex(a.SfxGain);
         _auVoiceGain.SelectedIndex = GainIndex(a.VoiceGain);
     }
 
-    private void SaveAudio()
+    private void SaveAudio(bool installMods = true)
     {
         string dir = CurrentDir();
         if (dir == null) return;
@@ -1341,13 +1397,17 @@ public sealed class MainWindow : Window
             MusicMap = _auMap.Text?.Trim() ?? "",
             SfxPitch = _auSfxPitch.SelectedIndex switch { 1 => "0.05", 2 => "0.10", 3 => "0.20", _ => "0" },
             Voice = _auVoice.SelectedIndex == 1 ? "mute" : "game",
+            VoicePitch = _auVoicePitch.SelectedIndex switch { 1 => "0.85", 2 => "1.15", _ => "1" },
+            VoicePitchRand = _auVoicePitch.SelectedIndex == 3 ? "0.1" : "0",
+            VoiceRandom = _auVoiceRandom.IsChecked == true,
             MusicGain = GainValue(_auMusicGain.SelectedIndex),
             SfxGain = GainValue(_auSfxGain.SelectedIndex),
             VoiceGain = GainValue(_auVoiceGain.SelectedIndex),
             Duck = _auDuck.IsChecked == true,
             Night = _auNight.IsChecked == true,
         };
-        _status.Text = AudioSettings.Write(dir, a) + " " + Patcher.InstallModFiles(dir);
+        string written = AudioSettings.Write(dir, a);
+        _status.Text = installMods ? written + " " + Patcher.InstallModFiles(dir) : written;
     }
 
     private Control BuildPortTab(Control displaySection)

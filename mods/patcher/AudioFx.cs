@@ -11,6 +11,9 @@ public sealed class AudioSettings
     public string MusicMap = "";
     public string SfxPitch = "0";       // 0 | 0.05 | 0.10 | 0.20
     public string Voice = "game";       // game | mute
+    public string VoicePitch = "1";     // 1 | 0.85 | 1.15
+    public string VoicePitchRand = "0"; // 0 | 0.1
+    public bool VoiceRandom = false;    // shuffle cached dialog lines
     public string MusicGain = "1";      // 0..1
     public string SfxGain = "1";
     public string VoiceGain = "1";
@@ -54,6 +57,9 @@ public sealed class AudioSettings
                     case "music_map": s.MusicMap = value; break;
                     case "sfx_pitch" when double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _): s.SfxPitch = value; break;
                     case "voice" when value is "game" or "mute": s.Voice = value; break;
+                    case "voice_pitch": s.VoicePitch = value; break;
+                    case "voice_pitch_rand": s.VoicePitchRand = value; break;
+                    case "voice_random": s.VoiceRandom = value != "0"; break;
                     case "music_gain": s.MusicGain = value; break;
                     case "sfx_gain": s.SfxGain = value; break;
                     case "voice_gain": s.VoiceGain = value; break;
@@ -73,6 +79,7 @@ public sealed class AudioSettings
             string path = Path(gameDir);
             Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
             s.Enabled = s.Music != "game" || s.SfxPitch != "0" || s.Voice != "game" ||
+                        s.VoicePitch != "1" || s.VoicePitchRand != "0" || s.VoiceRandom ||
                         s.MusicGain != "1" || s.SfxGain != "1" || s.VoiceGain != "1" ||
                         s.Night;
             File.WriteAllText(path,
@@ -82,6 +89,9 @@ public sealed class AudioSettings
                 $"music_map={s.MusicMap}{Environment.NewLine}" +
                 $"sfx_pitch={s.SfxPitch}{Environment.NewLine}" +
                 $"voice={s.Voice}{Environment.NewLine}" +
+                $"voice_pitch={s.VoicePitch}{Environment.NewLine}" +
+                $"voice_pitch_rand={s.VoicePitchRand}{Environment.NewLine}" +
+                $"voice_random={(s.VoiceRandom ? 1 : 0)}{Environment.NewLine}" +
                 $"music_gain={s.MusicGain}{Environment.NewLine}" +
                 $"sfx_gain={s.SfxGain}{Environment.NewLine}" +
                 $"voice_gain={s.VoiceGain}{Environment.NewLine}" +
