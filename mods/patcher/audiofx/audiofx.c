@@ -99,6 +99,14 @@ static const char* assign_lookup(const char* key) {
     if (!strcmp(g_assign[i].key, key)) return g_assign[i].path;
   return NULL;
 }
+static void assign_forget(const char* key) {
+  for (int i = 0; i < g_assign_count; i++) {
+    if (!strcmp(g_assign[i].key, key)) {
+      g_assign[i] = g_assign[--g_assign_count];
+      return;
+    }
+  }
+}
 static void assign_store(const char* key, const char* path) {
   for (int i = 0; i < g_assign_count; i++) {
     if (!strcmp(g_assign[i].key, key)) {
@@ -287,7 +295,7 @@ static void scan_music(void) {
   if (g_file_count > 1) qsort(g_files, (size_t)g_file_count, sizeof(g_files[0]), cmp_name);
   fprintf(stderr, "[audiofx] music folder: %d track(s) under %s\n", g_file_count, g_music_dir);
 }
-static int load_track(const char* path, short** out, long long* frames, int* rate, int* ch, int* fmt) {
+static int load_track_sndfile(const char* path, short** out, long long* frames, int* rate, int* ch, int* fmt) {
   load_sndfile();
   if (!sf_open_ || !sf_readf_short_ || !sf_close_) return 0;
   SF_INFO info; memset(&info, 0, sizeof(info));
@@ -314,6 +322,132 @@ static int load_track(const char* path, short** out, long long* frames, int* rat
   *fmt = use_ch == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
   return 1;
 }
+/* libmpg123 is present in the Steam Linux Runtime, whose libsndfile 1.0.25
+   cannot decode MP3. Use mpg123 for .mp3 and libsndfile for everything else. */
+typedef struct mpg123_handle_struct mpg123_handle;
+#define MPG123_OK 0
+#define MPG123_DONE -12
+#define MPG123_NEW_FORMAT -11
+#define MPG123_NEED_MORE -10
+#define MPG123_ENC_SIGNED_16 0x0D0
+
+static int (*mpg_init)(void);
+static mpg123_handle* (*mpg_new)(const char*, int*);
+static void (*mpg_delete)(mpg123_handle*);
+static int (*mpg_open)(mpg123_handle*, const char*);
+static int (*mpg_close)(mpg123_handle*);
+static int (*mpg_getformat)(mpg123_handle*, long*, int*, int*);
+static int (*mpg_read)(mpg123_handle*, void*, size_t, size_t*);
+static int (*mpg_format_none)(mpg123_handle*);
+static int (*mpg_format)(mpg123_handle*, long, int, int);
+static const char* (*mpg_strerror)(mpg123_handle*);
+static int g_mpg_ready = 0, g_mpg_tried = 0;
+
+static void load_mpg123(void) {
+  if (g_mpg_tried) return;
+  g_mpg_tried = 1;
+  void* lib = dlopen("libmpg123.so.0", RTLD_LAZY | RTLD_LOCAL);
+  if (!lib) lib = dlopen("libmpg123.so", RTLD_LAZY | RTLD_LOCAL);
+  if (!lib) { fprintf(stderr, "[audiofx] libmpg123 not found\n"); return; }
+  mpg_init = dlsym(lib, "mpg123_init");
+  mpg_new = dlsym(lib, "mpg123_new");
+  mpg_delete = dlsym(lib, "mpg123_delete");
+  mpg_open = dlsym(lib, "mpg123_open");
+  mpg_close = dlsym(lib, "mpg123_close");
+  mpg_getformat = dlsym(lib, "mpg123_getformat");
+  mpg_read = dlsym(lib, "mpg123_read");
+  mpg_format_none = dlsym(lib, "mpg123_format_none");
+  mpg_format = dlsym(lib, "mpg123_format");
+  mpg_strerror = dlsym(lib, "mpg123_strerror");
+  g_mpg_ready = mpg_new && mpg_delete && mpg_open && mpg_close &&
+                mpg_getformat && mpg_read;
+  if (g_mpg_ready && mpg_init) mpg_init();
+  fprintf(stderr, "[audiofx] libmpg123 %s\n", g_mpg_ready ? "ready" : "incomplete");
+}
+
+static int is_mp3(const char* path) {
+  const char* dot = strrchr(path, '.');
+  return dot && !strcasecmp(dot, ".mp3");
+}
+
+static int load_track_mp3(const char* path, short** out, long long* frames, int* rate, int* ch, int* fmt) {
+  load_mpg123();
+  if (!g_mpg_ready) return 0;
+  int err = 0;
+  mpg123_handle* h = mpg_new(NULL, &err);
+  if (!h) return 0;
+  if (mpg_open(h, path) != 0) {
+    fprintf(stderr, "[audiofx] mp3 open failed: %s (%s)\n", path,
+            mpg_strerror ? mpg_strerror(h) : "?");
+    mpg_delete(h);
+    return 0;
+  }
+  long r = 0; int channels = 0, enc = 0;
+  if (mpg_getformat(h, &r, &channels, &enc) != 0 || r <= 0 || channels < 1) {
+    mpg_close(h); mpg_delete(h); return 0;
+  }
+  if (enc != MPG123_ENC_SIGNED_16) {
+    if (!mpg_format_none || !mpg_format ||
+        mpg_format_none(h) != 0 ||
+        mpg_format(h, r, channels, MPG123_ENC_SIGNED_16) != 0) {
+      fprintf(stderr, "[audiofx] mp3 unsupported encoding 0x%X\n", enc);
+      mpg_close(h); mpg_delete(h); return 0;
+    }
+  }
+  size_t cap = 1 << 20, used = 0;
+  unsigned char* buf = (unsigned char*)malloc(cap);
+  if (!buf) { mpg_close(h); mpg_delete(h); return 0; }
+  for (;;) {
+    if (used + 65536 > cap) {
+      size_t nc = cap * 2;
+      unsigned char* nb = (unsigned char*)realloc(buf, nc);
+      if (!nb) break;
+      buf = nb; cap = nc;
+    }
+    size_t done = 0;
+    int rc = mpg_read(h, buf + used, cap - used, &done);
+    used += done;
+    if (rc == MPG123_DONE) break;
+    if (rc == MPG123_NEW_FORMAT) {
+      if (mpg_getformat(h, &r, &channels, &enc) != 0) break;
+      continue;
+    }
+    if (rc == MPG123_NEED_MORE) { if (done == 0) break; continue; }
+    if (rc != MPG123_OK) {
+      fprintf(stderr, "[audiofx] mp3 read error %d\n", rc);
+      break;
+    }
+    if (done == 0) break;
+  }
+  mpg_close(h); mpg_delete(h);
+  if (used < 2) { free(buf); return 0; }
+  int use_ch = channels >= 2 ? 2 : 1;
+  short* data = (short*)buf;
+  if (channels > 2) {
+    int nf = (int)(used / (size_t)(channels * 2));
+    short* mix = (short*)malloc((size_t)nf * 2 * sizeof(short));
+    if (!mix) { free(buf); return 0; }
+    for (int i = 0; i < nf; i++) {
+      mix[i * 2 + 0] = data[i * channels + 0];
+      mix[i * 2 + 1] = data[i * channels + 1];
+    }
+    free(buf); data = mix; use_ch = 2; used = (size_t)nf * 4; channels = 2;
+  }
+  *out = data;
+  *frames = (long long)(used / (size_t)(channels * 2));
+  *rate = (int)r;
+  *ch = use_ch;
+  *fmt = use_ch == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
+  fprintf(stderr, "[audiofx] mp3 %s (%.1fs %ldHz %dch)\n",
+          path, r ? (double)*frames / (double)r : 0.0, r, channels);
+  return 1;
+}
+
+static int load_track(const char* path, short** out, long long* frames, int* rate, int* ch, int* fmt) {
+  if (is_mp3(path) && load_track_mp3(path, out, frames, rate, ch, fmt)) return 1;
+  return load_track_sndfile(path, out, frames, rate, ch, fmt);
+}
+
 static void stop_external(void) {
   if (g_ext_src) { if (al.stop) al.stop(g_ext_src); if (al.del_sources) al.del_sources(1, &g_ext_src); g_ext_src = 0; }
   if (g_ext_buf) { if (al.del_buffers) al.del_buffers(1, &g_ext_buf); g_ext_buf = 0; }
@@ -370,7 +504,10 @@ static void start_external(void) {
   snprintf(g_cur_key, sizeof(g_cur_key), "%s", key);
   g_cur_valid = 1;
   short* pcm = NULL; long long frames = 0; int rate = 0, ch = 0, fmt = 0;
-  if (!load_track(path, &pcm, &frames, &rate, &ch, &fmt)) return;
+  if (!load_track(path, &pcm, &frames, &rate, &ch, &fmt)) {
+    assign_forget(key);
+    return;
+  }
   if (g_night) night_process(pcm, (size_t)frames * ch);
   stop_external();
   if (!al.gen_buffers || !al.gen_sources || !al.bufdata || !al.sourcei) { free(pcm); return; }

@@ -209,7 +209,9 @@ the same post-process pass; it is independent of the game's MSAA/MLAA.
 ## Audio (PC build)
 
 The **Audio** tab writes `.mn9charsel/audio.conf` and installs
-`libaudiofx.so`, an OpenAL shim hooked at `alSourcePlay`.
+`libaudiofx.so`, an OpenAL shim hooked at `alSourcePlay`. MP3 decoding uses
+`libmpg123` because the Steam Linux Runtime's libsndfile 1.0.25 has no MP3
+support; OGG/FLAC/WAV go through libsndfile.
 
 - **Music** — defaults to **Random from folder**, scanning `~/Music`
   recursively (three levels). The dropdown lets the player choose Game, Mute,
