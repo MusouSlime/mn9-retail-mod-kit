@@ -257,7 +257,7 @@ Values: `beck`, `gold`, `retro`, `call`, `ray`.
 
 - **Set character** only writes the config.
 - **Launch with character** writes the config and, on Linux, starts
-  `mods/spawn_override/mn9-charselect.sh`. The wrapper sets
+  `mods/patcher/spawn_override/mn9-charselect.sh`. The wrapper sets
   `MN9_CHARACTER`/`MN9_CHARSEL_CONF` and `LD_PRELOAD`s
   `libmn9spawn.so`, which swaps the player pawn at spawn time.
 - `gold`/`retro` are Beck costumes; `call` swaps both the pawn and
