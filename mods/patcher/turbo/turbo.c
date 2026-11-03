@@ -40,8 +40,8 @@ static int g_auto_on = 1;
 static double g_rate = 10.0;
 static int g_button = 2;             /* SDL_CONTROLLER_BUTTON_X */
 static int g_key = -1;               /* optional toggle scancode */
-static int g_fire_held = 0;
-static int g_mouse_held = 0;
+static void* g_gc[4];
+static int g_gc_count = 0;
 static double g_t0 = 0;
 
 static double now_s(void)
@@ -135,29 +135,31 @@ static void write_controller_fire(unsigned char value)
     }
 }
 
+typedef unsigned char (*GetButtonFn)(void*, int);
+
+static int physical_fire(void)
+{
+    static GetButtonFn get_button = NULL;
+    if (!get_button) get_button = (GetButtonFn)dlsym(RTLD_NEXT, "SDL_GameControllerGetButton");
+    if (!get_button) return 0;
+    for (int i = 0; i < g_gc_count; i++)
+        if (g_gc[i] && get_button(g_gc[i], g_button)) return 1;
+    return 0;
+}
+
 static void apply_fire(void)
 {
-    if (!g_enabled || !g_auto_on || !g_fire_held) return;
+    if (!g_enabled || !g_auto_on) return;
+    if (!physical_fire()) return;
     write_controller_fire(fire_phase() ? 1 : 0);
 }
 
 static void clear_fire(void)
 {
-    if (g_fire_held) write_controller_fire(0);
+    write_controller_fire(0);
 }
 
 /* SDL_Event heads. */
-typedef struct {
-    uint32_t type, timestamp;
-    int32_t which;
-    uint8_t button, state, pad1, pad2;
-} CtrlButtonEvent;
-
-typedef struct {
-    uint32_t type, timestamp, windowID, which;
-    uint8_t button, state, clicks, pad;
-} MouseButtonEvent;
-
 typedef struct {
     uint32_t type, timestamp, windowID;
     uint8_t state, repeat, pad2, pad3;
@@ -168,6 +170,36 @@ typedef struct {
 
 typedef int (*PollEventFn)(void*);
 typedef uint32_t (*GetMouseStateFn)(int*, int*);
+typedef void* (*OpenFn)(int);
+typedef void (*CloseFn)(void*);
+
+static void track_close(void** list, int* count, void* handle)
+{
+    for (int i = 0; i < *count; i++) {
+        if (list[i] == handle) {
+            list[i] = list[--(*count)];
+            return;
+        }
+    }
+}
+
+void* SDL_GameControllerOpen(int index)
+{
+    static OpenFn real = NULL;
+    if (!real) real = (OpenFn)dlsym(RTLD_NEXT, "SDL_GameControllerOpen");
+    void* h = real ? real(index) : NULL;
+    if (h && g_gc_count < (int)(sizeof(g_gc) / sizeof(g_gc[0])))
+        g_gc[g_gc_count++] = h;
+    return h;
+}
+
+void SDL_GameControllerClose(void* h)
+{
+    static CloseFn real = NULL;
+    if (!real) real = (CloseFn)dlsym(RTLD_NEXT, "SDL_GameControllerClose");
+    track_close(g_gc, &g_gc_count, h);
+    if (real) real(h);
+}
 
 int SDL_PollEvent(void* ev)
 {
@@ -176,21 +208,12 @@ int SDL_PollEvent(void* ev)
     int r = real ? real(ev) : 0;
     if (!g_inited) init_once();
 
-    if (r && ev) {
-        uint32_t type = *(uint32_t*)ev;
-        if (type == 0x653 || type == 0x654) {           /* controller down/up */
-            CtrlButtonEvent* c = (CtrlButtonEvent*)ev;
-            if (c->button == (uint8_t)g_button) g_fire_held = (type == 0x653);
-        } else if (type == 0x401 || type == 0x402) {    /* mouse down/up */
-            MouseButtonEvent* m = (MouseButtonEvent*)ev;
-            if (m->button == 1) g_mouse_held = (type == 0x401);
-        } else if (type == 0x300 && g_key >= 0) {       /* key down */
-            KeyEvent* k = (KeyEvent*)ev;
-            if (k->scancode == g_key && !k->repeat) {
-                g_auto_on = !g_auto_on;
-                if (!g_auto_on) clear_fire();
-                fprintf(stderr, "[turbo] auto-fire %s\n", g_auto_on ? "on" : "off");
-            }
+    if (r && ev && *(uint32_t*)ev == 0x300 && g_key >= 0) {   /* SDL_KEYDOWN */
+        KeyEvent* k = (KeyEvent*)ev;
+        if (k->scancode == g_key && !k->repeat) {
+            g_auto_on = !g_auto_on;
+            if (!g_auto_on) clear_fire();
+            fprintf(stderr, "[turbo] auto-fire %s\n", g_auto_on ? "on" : "off");
         }
     }
 
@@ -204,7 +227,7 @@ uint32_t SDL_GetMouseState(int* x, int* y)
     if (!real) real = (GetMouseStateFn)dlsym(RTLD_NEXT, "SDL_GetMouseState");
     uint32_t buttons = real ? real(x, y) : 0;
     if (!g_inited) init_once();
-    if (g_enabled && g_auto_on && g_mouse_held && !fire_phase())
+    if (g_enabled && g_auto_on && (buttons & 1u) && !fire_phase())
         buttons &= ~1u;   /* release the left button during the off phase */
     return buttons;
 }
