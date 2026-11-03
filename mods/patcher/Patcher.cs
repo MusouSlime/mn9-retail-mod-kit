@@ -34,7 +34,6 @@ public sealed class Settings
     public int Fps = 62;
     public int Pool = 256;
     public int Physics = 5;
-    public int Difficulty = 3;   // 0 Normal, 1 Hard, 2 Hyper, 3 Maniac/Expert
 
     public string Resolution => $"{Width}x{Height}";
 }
@@ -339,10 +338,6 @@ public static class Patcher
             {
                 ["MaxPhysicsSubsteps"] = s.Physics.ToString(),
             };
-            var gameInfo = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["GameDifficulty"] = s.Difficulty.ToString(),
-            };
             foreach (string name in new[] { gamePlatform, "DefaultGame.ini" })
             {
                 string path = Path.Combine(configDir, name);
@@ -350,7 +345,6 @@ public static class Patcher
                 Backup(path, baseline);
                 Unlock(path);
                 Ini.Patch(path, "Engine.WorldInfo", world, create: false);
-                Ini.Patch(path, "Engine.GameInfo", gameInfo, create: false);
                 if (s.LockConfig) Lock(path); else Unlock(path);
             }
 
@@ -2026,7 +2020,6 @@ internal static class Cli
             return 0;
         var s = new Settings();
         if (Arg(args, "--fps") is string f && int.TryParse(f, out int fps)) s.Fps = fps;
-        if (Arg(args, "--difficulty") is string d && int.TryParse(d, out int diff)) s.Difficulty = Math.Clamp(diff, 0, 3);
         if (Arg(args, "--res") is string r)
         {
             string[] p = r.Split('x');

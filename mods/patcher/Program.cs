@@ -159,12 +159,6 @@ public sealed class MainWindow : Window
     };
 
     private static readonly int[] PhysicsValues = { 1, 2, 3, 4, 5, 6, 8, 10 };
-    private readonly ComboBox _difficulty = new()
-    {
-        Width = 210,
-        ItemsSource = new[] { "Normal", "Hard", "Hyper", "Maniac" },
-        SelectedIndex = 3,
-    };
     private readonly ComboBox _physics = new()
     {
         Width = 210,
@@ -311,8 +305,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.0.3 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.0.3 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.0.4 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.0.4 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -466,7 +460,6 @@ public sealed class MainWindow : Window
         Tip(_fps, "Frame cap written to MaxSmoothedFrameRate. 62 is the physics-safe default; higher values can change movement and pacing.");
         Tip(_pool, "Texture streaming pool in MB (PoolSize). Higher keeps more textures resident; lower saves VRAM.");
         Tip(_physics, "Physics substeps per frame (MaxPhysicsSubsteps). 5 is the game default; higher is more stable but slower.");
-        Tip(_difficulty, "PC difficulty written to GameDifficulty: 0 Normal, 1 Hard, 2 Hyper, 3 Maniac (Expert).");
         Tip(_shadows, "Dynamic character and world shadows.");
         Tip(_bloom, "Bloom glow and the game's FXAA anti-aliasing.");
         Tip(_motion, "Motion blur and pause-menu blur.");
@@ -527,8 +520,7 @@ public sealed class MainWindow : Window
 
         var pcDisplay = Section("PC build display (Steam only)",
             Row("Frame cap (PC)", _fps, "Texture pool (PC)", _pool),
-            physicsRow,
-            SimpleRow("Difficulty (PC)", _difficulty));
+            physicsRow);
 
         var pcNote = new TextBlock
         {
@@ -1056,7 +1048,6 @@ public sealed class MainWindow : Window
             Laa = _laa.IsChecked == true,
             LockConfig = _lock.IsChecked == true,
             RetroTextures = _retroTex.IsChecked == true,
-            Difficulty = Math.Clamp(_difficulty.SelectedIndex, 0, 3),
             Fps = FpsValues[Math.Clamp(_fps.SelectedIndex, 0, FpsValues.Length - 1)],
             Pool = PoolValues[Math.Clamp(_pool.SelectedIndex, 0, PoolValues.Length - 1)],
             Physics = PhysicsValues[Math.Clamp(_physics.SelectedIndex, 0, PhysicsValues.Length - 1)],

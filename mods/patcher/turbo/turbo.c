@@ -229,10 +229,10 @@ int SDL_PollEvent(void* ev)
 
         /* Optional pad toggle. Swallow the event so the game's normal
            binding (Direct Change 3 on R3) does not also fire. */
-        if (g_pad >= 0 && (type == 0x653 || type == 0x654)) {
+        if (g_pad >= 0 && (type == 0x651 || type == 0x652)) {
             CtrlButtonEvent* c = (CtrlButtonEvent*)ev;
             if (c->button == (uint8_t)g_pad) {
-                if (type == 0x653) {          /* down */
+                if (type == 0x651) {          /* down */
                     g_auto_on = !g_auto_on;
                     if (!g_auto_on) clear_fire();
                     fprintf(stderr, "[turbo] auto-fire %s (pad %d)\n",

@@ -8,14 +8,13 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
-## Xel Launcher 1.0.3
+## Xel Launcher 1.0.4
 
 The first stable release of the cross-platform launcher, built around the
 retail PC build and the ReXGlue Xbox 360 port.
 
 - **PC patcher** — resolution, frame cap, texture pool, physics substeps,
-  difficulty (Normal/Hard/Hyper/Maniac), effects, Large Address Aware,
-  config locking and restore.
+  effects, Large Address Aware, config locking and restore.
 - **Port tab (Linux)** — ReXGlue backend, quality presets, start mode,
   DLC/license mask, user-data root, diagnostics and keyboard binds.
 - **Post-process** — Metallic (default), Noir, Dot Matrix, Cinematic,
