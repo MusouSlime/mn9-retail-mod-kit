@@ -1,12 +1,37 @@
 # Mighty No. 9 retail mod kit
 
 Patcher and reversible mods for the retail PC build of **Mighty No. 9**
-(Steam app 314710). No game data, assets, or derived payloads are included.
+(Steam app 314710). No game code, ROMs, or data packages are included.
 
 - **Windows:** download `Mn9Patcher-win64.zip` from **Releases**, extract, run
   `Mn9Patcher.exe`. Self-contained, no .NET install needed.
-- **Linux:** source build or the `Mn9Patcher-x86_64.AppImage` release asset;
+- **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
+
+## Xel Launcher 1.0
+
+The first stable release of the cross-platform launcher, built around the
+retail PC build and the ReXGlue Xbox 360 port.
+
+- **PC patcher** — resolution, frame cap, texture pool, physics substeps,
+  difficulty (Normal/Hard/Hyper/Maniac), effects, Large Address Aware,
+  config locking and restore.
+- **Port tab (Linux)** — ReXGlue backend, quality presets, start mode,
+  DLC/license mask, user-data root, diagnostics and keyboard binds.
+- **Post-process** — Metallic (default), Noir, Dot Matrix, Cinematic,
+  Posterize and Retro, plus FXAA. Applied from the first frame.
+- **Audio** — replace the soundtrack from a folder (random/playlist/shuffle),
+  SFX pitch, voice mute, ducking, night mode and levels.
+- **Turbo (Linux PC build)** — toggle/hold fast-forward at 1.5x/2x/3x by
+  scaling the engine's `TimeDilation`; survives map loads.
+- **Character select** — Beck, Call, Ray, Gold and Retro via a spawn override
+  (Linux).
+- **Saves** — timestamped backups, manifests, restore and safe mode.
+
+Release binaries bundle launcher interface art extracted from the retail game
+for the header/turntables. That art is not part of the MIT-licensed source and
+is not committed to this repository; a source build runs without it unless you
+supply an `assets/` folder.
 
 ## Windows quick start
 
@@ -46,7 +71,7 @@ detect, fullscreen, potato, mouse toggle, save backup/restore, safe mode).
 
 | Path | What it does | Notes |
 |---|---|---|
-| `mods/patcher` | Same GUI/CLI patcher | Avalonia, builds on Linux too |
+| `mods/patcher` | Xel Launcher: PC patcher, port tab, postfx/audio/turbo shims, character select | Avalonia; Windows + Linux |
 | `mods/lowspec` | `low`…`lowest` and `quality`/`maximum` INI profiles | Python, no game data |
 | `mods/controller_fix` | Hides the Steam Input virtual pad so only one controller is seen | Launch wrapper |
 | `mods/safe_mode` | Restores a known-good config after an abnormal exit | Bash wrapper |
@@ -68,6 +93,9 @@ Requires the .NET 10 SDK.
 ```sh
 # Windows single-file exe + zip input
 mods/patcher/build_win.sh
+
+# rebuild the Linux LD_PRELOAD shims (postfx/audio/turbo)
+mods/patcher/build_mods.sh
 
 # Linux AppImage (needs mksquashfs + appimage runtime)
 mods/patcher/build_appimage.sh

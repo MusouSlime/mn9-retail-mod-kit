@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Mighty No. 9 Patcher
-Comment=Apply safe graphics profiles to Mighty No. 9
+Name=Xel Launcher
+Comment=Mighty No. 9 mod launcher and character select
 Exec=Mn9Patcher
 Icon=mn9patcher
 Terminal=false

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -26,12 +27,14 @@ public sealed class Settings
     public bool MouseFix = false;
     public bool Laa = false;
     public bool LockConfig = true;
+    public bool RetroTextures;
 
     public int Width = 1280;
     public int Height = 720;
     public int Fps = 62;
     public int Pool = 256;
     public int Physics = 5;
+    public int Difficulty = 3;   // 0 Normal, 1 Hard, 2 Hyper, 3 Maniac/Expert
 
     public string Resolution => $"{Width}x{Height}";
 }
@@ -241,7 +244,43 @@ public static class Patcher
                 ["MaxWholeSceneDominantShadowResolution"] = s.Shadows ? "2048" : "64",
                 ["UnbuiltNumWholeSceneDynamicShadowCascades"] = s.Shadows ? "3" : "1",
                 ["bAllowHighQualityMaterials"] = "True",
+
+                // High-quality defaults, always written so switching "Retro
+                // textures" back off actually restores the original filtering
+                // and mip limits instead of leaving the point/256px values.
+                ["TEXTUREGROUP_World"] = "(MinLODSize=64,MaxLODSize=2048,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=2)",
+                ["TEXTUREGROUP_WorldNormalMap"] = "(MinLODSize=32,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_WorldSpecular"] = "(MinLODSize=32,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_Character"] = "(MinLODSize=256,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_CharacterNormalMap"] = "(MinLODSize=128,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_CharacterSpecular"] = "(MinLODSize=128,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_Weapon"] = "(MinLODSize=512,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_Vehicle"] = "(MinLODSize=256,MaxLODSize=1024,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_Effects"] = "(MinLODSize=128,MaxLODSize=512,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_EffectsNotFiltered"] = "(MinLODSize=128,MaxLODSize=256,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_Skybox"] = "(MinLODSize=1024,MaxLODSize=2048,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
+                ["TEXTUREGROUP_UI"] = "(MinLODSize=2048,MaxLODSize=2048,LODBias=0,MinMagFilter=aniso,MipFilter=point,NumStreamedMips=0)",
             };
+
+            if (s.RetroTextures)
+            {
+                // Texture-level retro look: point sampling and small max mips.
+                system["MaxAnisotropy"] = "1";
+                system["bAllowHighQualityMaterials"] = "False";
+                system["DetailMode"] = "1";
+                system["TEXTUREGROUP_World"] = "(MinLODSize=32,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_WorldNormalMap"] = "(MinLODSize=32,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_WorldSpecular"] = "(MinLODSize=32,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_Character"] = "(MinLODSize=64,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_CharacterNormalMap"] = "(MinLODSize=64,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_CharacterSpecular"] = "(MinLODSize=64,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_Weapon"] = "(MinLODSize=64,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_Vehicle"] = "(MinLODSize=64,MaxLODSize=256,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_Effects"] = "(MinLODSize=32,MaxLODSize=128,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_EffectsNotFiltered"] = "(MinLODSize=32,MaxLODSize=128,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_Skybox"] = "(MinLODSize=128,MaxLODSize=512,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+                system["TEXTUREGROUP_UI"] = "(MinLODSize=128,MaxLODSize=1024,LODBias=0,MinMagFilter=point,MipFilter=point,NumStreamedMips=0)";
+            }
 
             foreach (string name in new[] { sysPlatform, "DefaultSystemSettings.ini" })
             {
@@ -300,6 +339,10 @@ public static class Patcher
             {
                 ["MaxPhysicsSubsteps"] = s.Physics.ToString(),
             };
+            var gameInfo = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["GameDifficulty"] = s.Difficulty.ToString(),
+            };
             foreach (string name in new[] { gamePlatform, "DefaultGame.ini" })
             {
                 string path = Path.Combine(configDir, name);
@@ -307,6 +350,7 @@ public static class Patcher
                 Backup(path, baseline);
                 Unlock(path);
                 Ini.Patch(path, "Engine.WorldInfo", world, create: false);
+                Ini.Patch(path, "Engine.GameInfo", gameInfo, create: false);
                 if (s.LockConfig) Lock(path); else Unlock(path);
             }
 
@@ -372,6 +416,7 @@ public static class Patcher
             log.AppendLine(MousePatch.Set(gameDir, false));
             log.AppendLine(AspectPatch.Revert(gameDir));
             log.AppendLine(LargeAddressAware.Revert(gameDir));
+            log.AppendLine(RestoreBinaryShim(gameDir));
         }
         catch (Exception ex)
         {
@@ -624,6 +669,443 @@ public static class Patcher
         return log.ToString().Trim();
     }
 
+    public static readonly string[] CharacterIds = { "beck", "gold", "retro", "call", "ray" };
+    public static readonly string[] CharacterNames =
+        { "Beck", "Golden Beck", "Retro Hero", "Call", "Ray (Beck moveset)" };
+
+    public static string CharacterConfigPath(string gameDir) =>
+        Path.Combine(gameDir, ".mn9charsel", "character");
+
+    public static string OptionsPath(string gameDir) =>
+        Path.Combine(gameDir, ".mn9charsel", "options");
+
+    public static (bool SkipCutscenes, bool DisableDialog, bool CelShading, string CelStrength, bool Fxaa)
+        ReadOptions(string gameDir)
+    {
+        bool skip = false, dialog = false, cel = true, fxaa = true;
+        string strength = "metallic";
+        try
+        {
+            string path = OptionsPath(gameDir);
+            if (File.Exists(path))
+            {
+                foreach (string line in File.ReadAllLines(path))
+                {
+                    string[] parts = line.Split('=', 2);
+                    if (parts.Length != 2) continue;
+                    string key = parts[0].Trim();
+                    string raw = parts[1].Trim();
+                    bool value = raw is "1" or "true" or "True";
+                    if (key == "skip_cutscenes") skip = value;
+                    else if (key == "disable_dialog") dialog = value;
+                    else if (key == "cel_shading") cel = value;
+                    else if (key == "cel_strength") strength = raw is "subtle" or "bold" or "comic" or "noir" or "dotmatrix" or "cinematic" or "posterize" or "metallic" ? raw : "metallic";
+                    else if (key == "fxaa") fxaa = value;
+                }
+            }
+        }
+        catch { }
+        return (skip, dialog, cel, strength, fxaa);
+    }
+
+    public static string WriteOptions(string gameDir, bool skipCutscenes, bool disableDialog,
+        bool celShading = true, string celStrength = "metallic", bool fxaa = true)
+    {
+        string path = OptionsPath(gameDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        celStrength = celStrength is "subtle" or "bold" or "comic" or "noir" or "dotmatrix"
+            or "cinematic" or "posterize" or "metallic" ? celStrength : "metallic";
+        File.WriteAllText(path,
+            $"skip_cutscenes={(skipCutscenes ? 1 : 0)}{Environment.NewLine}" +
+            $"disable_dialog={(disableDialog ? 1 : 0)}{Environment.NewLine}" +
+            $"cel_shading={(celShading ? 1 : 0)}{Environment.NewLine}" +
+            $"cel_strength={celStrength}{Environment.NewLine}" +
+            $"fxaa={(fxaa ? 1 : 0)}{Environment.NewLine}");
+        return "Options saved.";
+    }
+
+    public static (bool Enabled, string Mode, double Speed, string Key) ReadTurbo(string gameDir)
+    {
+        bool enabled = false;
+        string mode = "toggle";
+        double speed = 2.0;
+        string key = "F11";
+        try
+        {
+            string path = Path.Combine(gameDir, ".mn9charsel", "turbo.conf");
+            if (!File.Exists(path)) return (enabled, mode, speed, key);
+            foreach (string line in File.ReadLines(path))
+            {
+                string[] parts = line.Split('=', 2);
+                if (parts.Length != 2) continue;
+                string k = parts[0].Trim();
+                string v = parts[1].Trim();
+                if (k == "enabled") enabled = v is "1" or "true" or "True";
+                else if (k == "mode") mode = v == "hold" ? "hold" : "toggle";
+                else if (k == "speed" &&
+                         double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double sp))
+                    speed = Math.Clamp(sp, 1.05, 5.0);
+                else if (k == "key" && v.Length > 0) key = v;
+            }
+        }
+        catch { }
+        return (enabled, mode, speed, key);
+    }
+
+    public static string WriteTurbo(string gameDir, bool enabled, string mode, double speed, string key)
+    {
+        string dir = Path.Combine(gameDir, ".mn9charsel");
+        Directory.CreateDirectory(dir);
+        mode = mode == "hold" ? "hold" : "toggle";
+        speed = Math.Clamp(speed, 1.05, 5.0);
+        key = string.IsNullOrWhiteSpace(key) ? "F11" : key.Trim();
+        File.WriteAllText(Path.Combine(dir, "turbo.conf"),
+            $"enabled={(enabled ? 1 : 0)}{Environment.NewLine}" +
+            $"mode={mode}{Environment.NewLine}" +
+            $"speed={speed.ToString("0.0", CultureInfo.InvariantCulture)}{Environment.NewLine}" +
+            $"key={key}{Environment.NewLine}");
+        return "Turbo saved.";
+    }
+
+    public static (int Fps, int Pool, int Physics) ReadPcTuning(string gameDir)
+    {
+        int fps = 62, pool = 256, physics = 5;
+        try
+        {
+            string configDir = Path.Combine(gameDir, "MN9Game", "Config");
+            if (!Directory.Exists(configDir)) return (fps, pool, physics);
+            string prefix = File.Exists(Path.Combine(configDir, "SDL2Linux-MN9Engine.ini"))
+                ? "SDL2Linux-MN9" : "MN9";
+
+            foreach (string name in new[] { "DefaultEngine.ini", prefix + "Engine.ini" })
+            {
+                string path = Path.Combine(configDir, name);
+                if (Ini.ReadValue(path, "Engine.Engine", "MaxSmoothedFrameRate") is string f &&
+                    int.TryParse(f, out int fv)) fps = fv;
+                if (Ini.ReadValue(path, "TextureStreaming", "PoolSize") is string p &&
+                    int.TryParse(p, out int pv)) pool = pv;
+            }
+            foreach (string name in new[] { "DefaultGame.ini", prefix + "Game.ini" })
+            {
+                string path = Path.Combine(configDir, name);
+                if (Ini.ReadValue(path, "Engine.WorldInfo", "MaxPhysicsSubsteps") is string ph &&
+                    int.TryParse(ph, out int phv)) physics = phv;
+            }
+        }
+        catch { }
+        return (fps, pool, physics);
+    }
+
+    public static string ReadCharacter(string gameDir)
+    {
+        try
+        {
+            string path = CharacterConfigPath(gameDir);
+            if (File.Exists(path))
+            {
+                string value = File.ReadAllText(path).Trim().ToLowerInvariant();
+                if (CharacterIds.Contains(value)) return value;
+            }
+        }
+        catch { }
+        return "beck";
+    }
+
+    public static string SetCharacter(string gameDir, string character)
+    {
+        character = (character ?? "beck").Trim().ToLowerInvariant();
+        if (!CharacterIds.Contains(character)) character = "beck";
+        string path = CharacterConfigPath(gameDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        File.WriteAllText(path, character + Environment.NewLine);
+        return $"Character set to {CharacterDisplay(character)}.";
+    }
+
+    public static string CharacterDisplay(string id) => id switch
+    {
+        "gold" => "Golden Beck",
+        "retro" => "Retro Hero",
+        "call" => "Call",
+        "ray" => "Ray",
+        _ => "Beck",
+    };
+
+    public static string FindCharacterWrapper(string gameDir)
+    {
+        string env = Environment.GetEnvironmentVariable("MN9_CHARSEL_WRAPPER");
+        if (!string.IsNullOrEmpty(env) && File.Exists(env)) return Path.GetFullPath(env);
+
+        string baseDir = AppContext.BaseDirectory;
+        var candidates = new List<string>
+        {
+            Path.Combine(baseDir, "mn9-charselect.sh"),
+            Path.Combine(baseDir, "..", "spawn_override", "mn9-charselect.sh"),
+            Path.Combine(baseDir, "..", "..", "spawn_override", "mn9-charselect.sh"),
+            Path.Combine(baseDir, "..", "..", "..", "spawn_override", "mn9-charselect.sh"),
+            Path.Combine(baseDir, "..", "..", "..", "..", "spawn_override", "mn9-charselect.sh"),
+            Path.Combine(gameDir, ".mn9charsel", "mn9-charselect.sh"),
+        };
+        foreach (string candidate in candidates)
+        {
+            try
+            {
+                string full = Path.GetFullPath(candidate);
+                if (File.Exists(full)) return full;
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    private const string BinaryShimMarker = "# MN9 spawn shim";
+
+    private const string BinaryShim = """
+#!/usr/bin/env bash
+# MN9 spawn shim
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+GAME="$(cd "$HERE/../.." && pwd)"
+CONF="$GAME/.mn9charsel/character"
+LIB="$GAME/.mn9charsel/libmn9spawn.so"
+FX="$GAME/.mn9charsel/libpostfx.so"
+AUDIO="$(dirname "$FX")/libaudiofx.so"
+char="beck"
+if [ -f "$CONF" ]; then char="$(head -n1 "$CONF" | tr -d '[:space:]')"; fi
+case "$char" in
+  gold|retro|beck|call|ray) ;;
+  *) char="beck" ;;
+esac
+export MN9_CHARACTER="$char"
+export MN9_GAME_DIR="$GAME"
+export MN9_CHARSEL_CONF="$CONF"
+OPTS="$GAME/.mn9charsel/options"
+skip=0
+dialog=0
+cel=1
+strength="metallic"
+fxaa=1
+if [ -f "$OPTS" ]; then
+  skip="$(sed -n 's/^skip_cutscenes=//p' "$OPTS" | tail -n1)"
+  dialog="$(sed -n 's/^disable_dialog=//p' "$OPTS" | tail -n1)"
+  cel="$(sed -n 's/^cel_shading=//p' "$OPTS" | tail -n1)"
+  strength="$(sed -n 's/^cel_strength=//p' "$OPTS" | tail -n1)"
+  fxaa="$(sed -n 's/^fxaa=//p' "$OPTS" | tail -n1)"
+fi
+export MN9_SKIP_CUTSCENES="${skip:-0}"
+export MN9_DISABLE_DIALOG="${dialog:-0}"
+export MN9_CEL_SHADING="${cel:-0}"
+export MN9_FXAA="${fxaa:-1}"
+AC="$GAME/.mn9charsel/audio.conf"
+audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; amg=1; asg=1; avg=1; aduck=1; anight=0
+if [ -f "$AC" ]; then
+  audio="$(sed -n 's/^enabled=//p' "$AC" | tail -n1)"
+  amusic="$(sed -n 's/^music=//p' "$AC" | tail -n1)"
+  adir="$(sed -n 's/^music_dir=//p' "$AC" | tail -n1)"
+  amap="$(sed -n 's/^music_map=//p' "$AC" | tail -n1)"
+  apitch="$(sed -n 's/^sfx_pitch=//p' "$AC" | tail -n1)"
+  avoice="$(sed -n 's/^voice=//p' "$AC" | tail -n1)"
+  amg="$(sed -n 's/^music_gain=//p' "$AC" | tail -n1)"
+  asg="$(sed -n 's/^sfx_gain=//p' "$AC" | tail -n1)"
+  avg="$(sed -n 's/^voice_gain=//p' "$AC" | tail -n1)"
+  aduck="$(sed -n 's/^duck=//p' "$AC" | tail -n1)"
+  anight="$(sed -n 's/^night=//p' "$AC" | tail -n1)"
+fi
+case "$strength" in
+  noir)       export MN9_POSTFX_MODE=noir ;;
+  dotmatrix)  export MN9_POSTFX_MODE=dotmatrix ;;
+  cinematic)  export MN9_POSTFX_MODE=cinematic ;;
+  posterize)  export MN9_POSTFX_MODE=posterize ;;
+  metallic)   export MN9_POSTFX_MODE=metallic ;;
+  comic)      export MN9_CEL_LEVELS=4; export MN9_CEL_OUTLINE=1.25; export MN9_CEL_SATURATION=1.55 ;;
+  subtle)     export MN9_CEL_LEVELS=6; export MN9_CEL_OUTLINE=0.75; export MN9_CEL_SATURATION=1.22 ;;
+  *)          export MN9_CEL_LEVELS=5; export MN9_CEL_OUTLINE=1.00; export MN9_CEL_SATURATION=1.35 ;;
+esac
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/mn9mod-$(id -u)"
+mkdir -p "$RUNTIME"
+ln -sf "$LIB" "$RUNTIME/libmn9spawn.so"
+PRELOAD="$RUNTIME/libmn9spawn.so"
+if [ "$cel" = "1" ] && [ -f "$FX" ]; then
+  ln -sf "$FX" "$RUNTIME/libpostfx.so"
+  PRELOAD="$PRELOAD:$RUNTIME/libpostfx.so"
+fi
+if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
+  ln -sf "$AUDIO" "$RUNTIME/libaudiofx.so"
+  PRELOAD="$PRELOAD:$RUNTIME/libaudiofx.so"
+  export MN9_AUDIO_MUSIC="${amusic:-game}"
+  export MN9_AUDIO_MUSIC_DIR="${adir:-}"
+  export MN9_AUDIO_SFX_PITCH="${apitch:-0}"
+  export MN9_AUDIO_VOICE="${avoice:-game}"
+  export MN9_AUDIO_MUSIC_GAIN="${amg:-1}"
+  export MN9_AUDIO_SFX_GAIN="${asg:-1}"
+  export MN9_AUDIO_VOICE_GAIN="${avg:-1}"
+  export MN9_AUDIO_MUSIC_MAP="${amap:-}"
+  export MN9_AUDIO_DUCK="${aduck:-1}"
+  export MN9_AUDIO_NIGHT="${anight:-0}"
+fi
+TURBO="$GAME/.mn9charsel/turbo.conf"
+TLIB="$GAME/.mn9charsel/libmn9turbo.so"
+turbo=0; tmode=toggle; tspeed=2.0; tkey=F11
+if [ -f "$TURBO" ]; then
+  turbo="$(sed -n 's/^enabled=//p' "$TURBO" | tail -n1)"
+  tmode="$(sed -n 's/^mode=//p' "$TURBO" | tail -n1)"
+  tspeed="$(sed -n 's/^speed=//p' "$TURBO" | tail -n1)"
+  tkey="$(sed -n 's/^key=//p' "$TURBO" | tail -n1)"
+fi
+if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
+  ln -sf "$TLIB" "$RUNTIME/libmn9turbo.so"
+  PRELOAD="$PRELOAD:$RUNTIME/libmn9turbo.so"
+  export MN9_TURBO_ENABLED=1
+  export MN9_TURBO_MODE="${tmode:-toggle}"
+  export MN9_TURBO_SPEED="${tspeed:-2.0}"
+  export MN9_TURBO_KEY="${tkey:-F11}"
+fi
+# Keep Steam's overlay first so Steam Input and the overlay keep working.
+if [ -n "${LD_PRELOAD:-}" ]; then
+  export LD_PRELOAD="$LD_PRELOAD:$PRELOAD"
+else
+  export LD_PRELOAD="$PRELOAD"
+fi
+exec "$HERE/MN9Game.bin.x86_64.real" "$@"
+""";
+
+    private static bool IsBinaryShim(string path)
+    {
+        try
+        {
+            return File.Exists(path) &&
+                   File.ReadLines(path).Take(4).Any(l => l.Contains(BinaryShimMarker));
+        }
+        catch { return false; }
+    }
+
+    private static string InstallBinaryShim(string gameDir)
+    {
+        string binDir = Path.Combine(gameDir, "Binaries", "Linux");
+        string bin = Path.Combine(binDir, "MN9Game.bin.x86_64");
+        string real = bin + ".real";
+        if (!File.Exists(bin))
+            return "Game binary not found: " + bin;
+
+        if (!File.Exists(real))
+        {
+            File.Move(bin, real);
+        }
+        else if (!IsBinaryShim(bin))
+        {
+            File.Copy(bin, real, overwrite: true);
+        }
+
+        File.WriteAllText(bin, BinaryShim);
+        try
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                File.SetUnixFileMode(bin,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public static string RestoreBinaryShim(string gameDir)
+    {
+        string bin = Path.Combine(gameDir, "Binaries", "Linux", "MN9Game.bin.x86_64");
+        string real = bin + ".real";
+        if (!File.Exists(real)) return "Binary shim is not installed.";
+        try
+        {
+            if (IsBinaryShim(bin)) File.Delete(bin);
+            File.Move(real, bin, overwrite: true);
+            return "Game binary restored.";
+        }
+        catch (Exception ex)
+        {
+            return "Could not restore game binary: " + ex.Message;
+        }
+    }
+
+    private static string InstallCharacterWrapper(string gameDir, string source)
+    {
+        string destDir = Path.Combine(gameDir, ".mn9charsel");
+        Directory.CreateDirectory(destDir);
+        string dest = Path.Combine(destDir, "mn9-charselect.sh");
+        File.Copy(source, dest, true);
+        string lib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9spawn.so");
+        if (File.Exists(lib))
+            File.Copy(lib, Path.Combine(destDir, "libmn9spawn.so"), true);
+        string fx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libpostfx.so");
+        if (File.Exists(fx))
+        {
+            // Never let an older launcher/AppImage replace a newer shader that is
+            // already installed. This bit us when a stale bundle re-copied the
+            // gated build over the always-on one.
+            string destFx = Path.Combine(destDir, "libpostfx.so");
+            bool newer = !File.Exists(destFx) ||
+                         File.GetLastWriteTimeUtc(fx) > File.GetLastWriteTimeUtc(destFx);
+            if (newer) File.Copy(fx, destFx, true);
+        }
+        string afx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libaudiofx.so");
+        if (File.Exists(afx))
+            File.Copy(afx, Path.Combine(destDir, "libaudiofx.so"), true);
+        string tlib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9turbo.so");
+        if (File.Exists(tlib))
+            File.Copy(tlib, Path.Combine(destDir, "libmn9turbo.so"), true);
+        try
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                File.SetUnixFileMode(dest,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            }
+        }
+        catch { }
+        return dest;
+    }
+
+    public static string InstallModFiles(string gameDir)
+    {
+        if (!OperatingSystem.IsLinux())
+            return "Linux-only mod files; selection saved for a future Windows hook.";
+
+        string source = FindCharacterWrapper(gameDir);
+        if (source == null)
+            return "Spawn wrapper not found.";
+
+        InstallCharacterWrapper(gameDir, source);
+        string shimError = InstallBinaryShim(gameDir);
+        return shimError ?? "Mod files installed; normal Steam launches will use them.";
+    }
+
+    public static string LaunchCharacter(string gameDir, string character)
+    {
+        string message = SetCharacter(gameDir, character);
+        string install = InstallModFiles(gameDir);
+        if (install.StartsWith("Spawn wrapper") || install.StartsWith("Game binary"))
+            return message + " " + install;
+
+        string steam = FindSteam() ?? "steam";
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = steam,
+                Arguments = "-applaunch 314710",
+                UseShellExecute = false,
+            };
+            Process.Start(psi);
+            return message + " " + install + " Launched through Steam.";
+        }
+        catch (Exception ex)
+        {
+            return message + " Steam launch failed: " + ex.Message;
+        }
+    }
+
     private static Process FindGameProcess()
     {
         foreach (var p in Process.GetProcesses())
@@ -761,6 +1243,31 @@ public static class Patcher
 
 internal static class Ini
 {
+    public static string? ReadValue(string path, string section, string key)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            bool inSection = false;
+            foreach (string raw in File.ReadLines(path))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith('['))
+                {
+                    inSection = line.Equals($"[{section}]", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+                if (!inSection) continue;
+                int eq = line.IndexOf('=');
+                if (eq <= 0) continue;
+                if (line[..eq].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                    return line[(eq + 1)..].Trim();
+            }
+        }
+        catch { }
+        return null;
+    }
+
     public static void Patch(string path, string section, Dictionary<string, string> values, bool create)
     {
         string text = File.ReadAllText(path);
@@ -1361,6 +1868,30 @@ internal static class Cli
             catch { }
             return 0;
         }
+        // ReXGlue port front-end: does not need a PC game dir.
+        if (args.Contains("--port-launch") || args.Contains("--port-apply"))
+        {
+            var ps = Port.Read();
+            if (Arg(args, "--port-quality") is string pq) ps.Quality = pq;
+            if (Arg(args, "--port-res") is string pres)
+            {
+                string[] p = pres.Split('x');
+                if (p.Length == 2 && int.TryParse(p[0], out int pw) && int.TryParse(p[1], out int ph))
+                {
+                    ps.Width = pw;
+                    ps.Height = ph;
+                }
+            }
+            if (args.Contains("--port-windowed")) ps.Fullscreen = false;
+            if (args.Contains("--port-fullscreen")) ps.Fullscreen = true;
+            if (args.Contains("--port-vsync")) ps.Vsync = true;
+            if (args.Contains("--port-no-vsync")) ps.Vsync = false;
+            if (args.Contains("--port-play-intro")) ps.SkipIntro = false;
+            if (args.Contains("--port-skip-intro")) ps.SkipIntro = true;
+            Console.WriteLine(args.Contains("--port-launch") ? Port.Launch(ps) : Port.Apply(ps));
+            return 0;
+        }
+
         string game = Arg(args, "--game-dir") ?? Patcher.FindGameDir();
         if (game == null)
         {
@@ -1395,13 +1926,71 @@ internal static class Cli
             Console.WriteLine(Patcher.Restore(game));
             return 0;
         }
-        if (args.Contains("--launch"))
+        if (args.Contains("--show-character"))
         {
-            Console.WriteLine(Patcher.LaunchSafe(game));
+            Console.WriteLine(Patcher.ReadCharacter(game));
             return 0;
         }
+        string character = Arg(args, "--character");
+        if (character != null)
+            Console.WriteLine(Patcher.SetCharacter(game, character));
+
+        bool skipFlag = args.Contains("--skip-cutscenes");
+        bool noSkip = args.Contains("--no-skip-cutscenes");
+        bool dialogFlag = args.Contains("--disable-dialog");
+        bool noDialog = args.Contains("--no-disable-dialog");
+        bool celFlag = args.Contains("--cel-shading");
+        bool noCel = args.Contains("--no-cel-shading");
+        string celStrengthArg = Arg(args, "--cel-strength");
+        if (skipFlag || noSkip || dialogFlag || noDialog || celFlag || noCel || celStrengthArg != null ||
+            args.Contains("--fxaa") || args.Contains("--no-fxaa"))
+        {
+            var (skip, dialog, cel, strength, fxaa) = Patcher.ReadOptions(game);
+            if (skipFlag) skip = true;
+            if (noSkip) skip = false;
+            if (dialogFlag) dialog = true;
+            if (noDialog) dialog = false;
+            if (celFlag) cel = true;
+            if (noCel) cel = false;
+            if (celStrengthArg != null) strength = celStrengthArg;
+            if (args.Contains("--fxaa")) fxaa = true;
+            if (args.Contains("--no-fxaa")) fxaa = false;
+            Console.WriteLine(Patcher.WriteOptions(game, skip, dialog, cel, strength, fxaa));
+            Console.WriteLine(Patcher.InstallModFiles(game));
+        }
+        if (args.Contains("--turbo") || args.Contains("--no-turbo") ||
+            Arg(args, "--turbo-mode") != null || Arg(args, "--turbo-speed") != null ||
+            Arg(args, "--turbo-key") != null)
+        {
+            var (en, md, sp, ky) = Patcher.ReadTurbo(game);
+            if (args.Contains("--turbo")) en = true;
+            if (args.Contains("--no-turbo")) en = false;
+            if (Arg(args, "--turbo-mode") is string tm) md = tm;
+            if (Arg(args, "--turbo-speed") is string tsv &&
+                double.TryParse(tsv, NumberStyles.Float, CultureInfo.InvariantCulture, out double spv)) sp = spv;
+            if (Arg(args, "--turbo-key") is string tk) ky = tk;
+            Console.WriteLine(Patcher.WriteTurbo(game, en, md, sp, ky));
+            Console.WriteLine(Patcher.InstallModFiles(game));
+            return 0;
+        }
+        if (args.Contains("--launch-character"))
+        {
+            Console.WriteLine(Patcher.LaunchCharacter(game, character ?? Patcher.ReadCharacter(game)));
+            return 0;
+        }
+        if (args.Contains("--launch"))
+        {
+            if (character != null)
+                Console.WriteLine(Patcher.LaunchCharacter(game, character));
+            else
+                Console.WriteLine(Patcher.LaunchSafe(game));
+            return 0;
+        }
+        if (character != null)
+            return 0;
         var s = new Settings();
         if (Arg(args, "--fps") is string f && int.TryParse(f, out int fps)) s.Fps = fps;
+        if (Arg(args, "--difficulty") is string d && int.TryParse(d, out int diff)) s.Difficulty = Math.Clamp(diff, 0, 3);
         if (Arg(args, "--res") is string r)
         {
             string[] p = r.Split('x');
@@ -1421,6 +2010,8 @@ internal static class Cli
         if (args.Contains("--mlaa")) s.Mlaa = true;
         if (args.Contains("--no-mlaa")) s.Mlaa = false;
         if (args.Contains("--no-lock")) s.LockConfig = false;
+        if (args.Contains("--retro-textures")) s.RetroTextures = true;
+        if (args.Contains("--no-retro-textures")) s.RetroTextures = false;
         Console.WriteLine(Patcher.Apply(game, s));
         return 0;
     }

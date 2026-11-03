@@ -20,3 +20,12 @@ tools/ue3/*/obj/
 # retail-derived decompiled scripts stay out of git (kept in the personal build)
 mods/ingame_options/Option_frame_*.as
 mods/ingame_options/boot_skip_frame_*.as
+
+# launcher source-only tree: retail-derived UI art and personal research stay out
+mods/patcher/assets/
+mods/patcher/skins/
+mods/patcher/mesh/
+mods/patcher/qol/
+mods/patcher/charpatch/
+mods/patcher/spawn_override/libmn9spawn_megaxel.so
+mods/patcher/spawn_override/run-megaxel-pc.sh
