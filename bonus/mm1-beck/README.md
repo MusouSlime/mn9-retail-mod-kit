@@ -49,3 +49,21 @@ IPS SHA256: `e07c0d32b0293d5cdae3ef1cb9ef0b6e665c2cc9eca3dca0ccba89df0108e06f`
   variants are killed normally instead of weakening.
 - No game data, ROMs, or commercial assets are included. The IPS patch is
   the only payload.
+
+## Vanilla Buster fallback
+
+`MM1-Beck-v2.43-vanilla-buster.ips` is the fallback build for the boss
+charge/freeze experiments:
+
+- The **Mega Buster damages bosses exactly like the original game** (the
+  original boss damage table is restored).
+- The boss charge meter, charged-dash boss damage, and 6-hit boss freeze are
+  disabled.
+- The slide/dash, ladder animation, pause face, palettes, Cut Man drop-room
+  fix, and the regular-enemy weaken/absorb system remain.
+
+Use this one if the boss charge/freeze build misbehaves. Additional hashes:
+
+- pristine patched SHA1: `a85c2b8d2400eea5ead3ce329c934a6cfeeda786`
+- MMLC patched SHA1: `d0eb4b4e77099468de24431830a371e03d08f576`
+- IPS SHA256: `8c7e16fc47695d20fd247d0040cbefdecbe7194e51900660ce55af01d25fd1ec`
