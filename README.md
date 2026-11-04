@@ -8,7 +8,7 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
-## Xel Launcher 1.4.1
+## Xel Launcher 1.4.2
 
 Two top-level pages — **Port** and **Steam** — with the same sub-tabs
 (Setup, Display, Quality, Audio, Gameplay, Character, Saves, Advanced).
@@ -23,6 +23,11 @@ Both platforms are supported, including a Windows ReXGlue runtime.
   config locking and restore.
 - **DLC/addons** — Golden Beck, MegaXel, Ray and Retro Hero are staged into
   the port's content folder; pick the form in game.
+- **In-game mod loader** — **DOWNLOAD CONTENT** in the main menu opens a
+  native loader instead of the dead Xbox Live store. It lists the addon packs
+  with installed/missing status and sizes, rescans the folder, and exposes
+  texture detail and frame pacing. **Mods / DLC** in the launcher opens the
+  port with the loader already on screen.
 - **Post-process** — Metallic (default), Noir, Dot Matrix, Cinematic,
   Posterize and Retro, plus FXAA. Applied from the first frame.
 - **Audio** — replace the soundtrack from a folder (random/playlist/shuffle),
@@ -34,8 +39,9 @@ Both platforms are supported, including a Windows ReXGlue runtime.
 - **Character select** — Beck, Call, Ray, Gold and Retro via a spawn override
   (Linux).
 - **Saves** — timestamped backups, manifests, restore and safe mode.
-- **Fast boot** — one A at the title reaches the main menu; the controller was
-  verified on the released build.
+- **Fast boot** — one A at the title reaches the main menu. The press is held
+  for 150 ms so the 60 Hz guest cannot miss it; the controller was verified on
+  the released build.
 - **Texture detail (port)** — native, low (skip the largest mip) or very low
   (skip two), without repacking the game data.
 

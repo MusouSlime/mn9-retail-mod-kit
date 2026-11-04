@@ -517,14 +517,14 @@ public static class Port
                $"vsync {(s.Vsync ? "on" : "off")}, start {s.StartMode}. " + content;
     }
 
-    public static string Launch(PortSettings s)
+    public static string Launch(PortSettings s, bool openModLoader = false)
     {
         if (s.Backend == "pc")
             return LaunchPc();
 
         ResolveManagedRoot(s);
         if (UseManaged(s))
-            return LaunchManaged(s);
+            return LaunchManaged(s, openModLoader);
         if (IsWindows)
             return "Install the port from XBLA first; the dev hybrid launcher is Linux-only.";
 
@@ -552,6 +552,7 @@ public static class Port
             };
             psi.ArgumentList.Add(HybridBin);
             psi.ArgumentList.Add("rex");
+            if (openModLoader) psi.Environment["MN9_MODLOADER"] = "1";
             Process.Start(psi);
         }
         catch (Exception ex)
@@ -563,7 +564,7 @@ public static class Port
 
     /// <summary>Launch a self-contained imported port directly, without bash or
     /// the dev project. Works on Linux and Windows.</summary>
-    public static string LaunchManaged(PortSettings s)
+    public static string LaunchManaged(PortSettings s, bool openModLoader = false)
     {
         string root = ManagedRootFor(s);
         string exe = ManagedRuntimeExeFor(s);
@@ -639,6 +640,7 @@ public static class Port
             psi.ArgumentList.Add(Path.Combine(logs, "mn9_managed.log"));
 
             psi.Environment["MN9_QUALITY"] = s.Quality;
+            if (openModLoader) psi.Environment["MN9_MODLOADER"] = "1";
             psi.Environment["MN9_VSYNC"] = s.Vsync ? "true" : "false";
             psi.Environment["REX_FULLSCREEN"] = s.Fullscreen ? "true" : "false";
             psi.Environment["REX_VSYNC"] = s.Vsync ? "true" : "false";

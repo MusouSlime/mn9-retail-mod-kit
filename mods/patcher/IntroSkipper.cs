@@ -45,9 +45,12 @@ internal static class IntroSkipper
     {
         // xdotool 4.x on some distros rejects --sync after windowactivate.
         // Try the plain forms first, then the focus fallback.
-        if (Tool("xdotool", $"search --pid {pid} windowactivate key space")) return;
-        if (Tool("xdotool", $"search --pid {pid} windowfocus key space")) return;
-        if (Tool("xdotool", $"search --pid {pid} windowactivate --sync key space")) return;
+        // Guest input is polled at 60 Hz, so a 12 ms tap can be missed entirely.
+        // Hold the key across a few frames instead.
+        const string press = "keydown space sleep 0.15 keyup space";
+        if (Tool("xdotool", $"search --pid {pid} windowactivate {press}")) return;
+        if (Tool("xdotool", $"search --pid {pid} windowfocus {press}")) return;
+        if (Tool("xdotool", $"search --pid {pid} windowactivate --sync {press}")) return;
     }
 
     private static bool Tool(string exe, string args)

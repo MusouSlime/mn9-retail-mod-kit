@@ -439,6 +439,26 @@ public sealed class MainWindow : Window
             }
         };
 
+        var mods = new Button { Content = "Mods / DLC" };
+        mods.Click += async (_, _) =>
+        {
+            SaveAudio();
+            _status.Text = "Launching the ReXGlue port with the mod loader...";
+            PortSettings portSettings = CollectPort();
+            WindowState = WindowState.Minimized;
+            try
+            {
+                string msg = await Task.Run(() => Port.Launch(portSettings, openModLoader: true));
+                WindowState = WindowState.Normal;
+                _status.Text = msg;
+            }
+            catch (Exception ex)
+            {
+                WindowState = WindowState.Normal;
+                _status.Text = "Port launch failed: " + ex.Message;
+            }
+        };
+
         var launchSteam = new Button { Content = "Launch Steam version" };
         launchSteam.Click += (_, _) =>
         {
@@ -482,7 +502,7 @@ public sealed class MainWindow : Window
         apply.Foreground = new SolidColorBrush(Color.Parse("#06121F"));
         apply.FontWeight = FontWeight.Bold;
         apply.CornerRadius = new CornerRadius(6);
-        foreach (var b in new[] { restore, launch, launchSteam, setChar, launchChar, browse, detect })
+        foreach (var b in new[] { restore, launch, launchSteam, mods, setChar, launchChar, browse, detect })
         {
             b.Background = new SolidColorBrush(Color.Parse("#14283D"));
             b.Foreground = Brushes.White;
@@ -587,6 +607,7 @@ public sealed class MainWindow : Window
         Tip(apply, "Write the selected settings to the ReXGlue port config and the PC game config (with a backup).");
         Tip(restore, "Restore the pre-patch PC config and the original game binary.");
         Tip(launch, "Write the port settings and launch the ReXGlue Xbox 360 port (Vulkan).");
+        Tip(mods, "Launch the port with the in-game mod loader open. It is also the DOWNLOAD CONTENT entry in the main menu.");
         Tip(launchSteam, "Apply the PC build settings and launch the retail Steam version (app 314710).");
         Tip(_saveCombo, "Select a save backup to restore.");
         Tip(backupSaves, "Create a timestamped backup of the current save files.");
@@ -868,7 +889,7 @@ public sealed class MainWindow : Window
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            Children = { apply, restore, launch, launchSteam, testStage, launchStage },
+            Children = { apply, restore, launch, mods, launchSteam, testStage, launchStage },
         };
 
         var bottom = new StackPanel
