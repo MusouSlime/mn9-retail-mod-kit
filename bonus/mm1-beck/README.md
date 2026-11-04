@@ -67,3 +67,31 @@ Use this one if the boss charge/freeze build misbehaves. Additional hashes:
 - pristine patched SHA1: `a85c2b8d2400eea5ead3ce329c934a6cfeeda786`
 - MMLC patched SHA1: `d0eb4b4e77099468de24431830a371e03d08f576`
 - IPS SHA256: `8c7e16fc47695d20fd247d0040cbefdecbe7194e51900660ce55af01d25fd1ec`
+
+## Refit sprite build — vanilla bosses + Cut Man blocks
+
+`MM1-Beck-Refit-Vanilla-Blocks.ips` is the current stable WIP build.
+
+Apply to the MMLC dump (`e4c579ad2a74ee320e55fe5e3480bae2a822c082`).
+This build was tested against that dump.
+
+- Patched MMLC SHA1: `b386e0852fe7817f749babbe9e853e9ae22f0fe3`
+- IPS SHA256: `45790e5a0d931f2a7776918cd5bcd6f304a7887311cdb06f20282278085e6dbb`
+
+Changes:
+
+- New refit player art: idle, inch walk 1–3, jump, hurt, shooting, ground
+  dash and two air-dash frames.
+- Shooting idle/walk toggle.
+- Ladder climb uses the first climb frame statically.
+- Cut Man screens 0/1 Guts Blocks restored.
+- Boss battles are on the vanilla-buster baseline: original boss damage
+  table, no boss freeze, no heal or charge AI hooks.
+- Regular-enemy weaken/freeze/absorb is unchanged.
+
+Caveats:
+
+- WIP bonus, not the main patcher release.
+- Boot-tested in Mesen (RetroArch); in-stage testing is ongoing.
+- No game data, ROMs, or commercial assets are included. The IPS patch is
+  the only payload.
