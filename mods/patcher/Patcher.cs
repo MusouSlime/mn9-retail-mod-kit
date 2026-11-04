@@ -22,7 +22,7 @@ public sealed class Settings
     public bool Msaa;
     public bool Fullscreen;
     public bool Vsync = true;
-    public bool Voice;
+    public bool Voice = true;
     public bool Movies;
     public bool MouseFix = false;
     public bool Laa = false;
@@ -663,9 +663,9 @@ public static class Patcher
         return log.ToString().Trim();
     }
 
-    public static readonly string[] CharacterIds = { "beck", "gold", "retro", "call", "ray" };
+    public static readonly string[] CharacterIds = { "beck", "gold", "retro", "call", "ray", "megaxel" };
     public static readonly string[] CharacterNames =
-        { "Beck", "Golden Beck", "Retro Hero", "Call", "Ray (Beck moveset)" };
+        { "Beck", "Golden Beck", "Retro Hero", "Call skin", "Ray skin", "MegaXEL Beck" };
 
     public static string CharacterConfigPath(string gameDir) =>
         Path.Combine(gameDir, ".mn9charsel", "character");
@@ -827,8 +827,9 @@ public static class Patcher
     {
         "gold" => "Golden Beck",
         "retro" => "Retro Hero",
-        "call" => "Call",
-        "ray" => "Ray",
+        "call" => "Call skin",
+        "ray" => "Ray skin",
+        "megaxel" => "MegaXEL Beck",
         _ => "Beck",
     };
 
@@ -874,10 +875,15 @@ AUDIO="$(dirname "$FX")/libaudiofx.so"
 char="beck"
 if [ -f "$CONF" ]; then char="$(head -n1 "$CONF" | tr -d '[:space:]')"; fi
 case "$char" in
-  gold|retro|beck|call|ray) ;;
+  gold|retro|beck|call|ray|megaxel) ;;
   *) char="beck" ;;
 esac
+skin=""
+case "$char" in
+  call|ray|megaxel) skin="$char"; char="beck" ;;
+esac
 export MN9_CHARACTER="$char"
+export MN9_SKIN="$skin"
 export MN9_GAME_DIR="$GAME"
 export MN9_CHARSEL_CONF="$CONF"
 OPTS="$GAME/.mn9charsel/options"
@@ -898,7 +904,7 @@ export MN9_DISABLE_DIALOG="${dialog:-0}"
 export MN9_CEL_SHADING="${cel:-0}"
 export MN9_FXAA="${fxaa:-1}"
 AC="$GAME/.mn9charsel/audio.conf"
-audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; amg=1; asg=1; avg=1; aduck=1; anight=0
+audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; avp=1; avpr=0; avr=0; amg=1; asg=1; avg=1; aduck=1; anight=0
 if [ -f "$AC" ]; then
   audio="$(sed -n 's/^enabled=//p' "$AC" | tail -n1)"
   amusic="$(sed -n 's/^music=//p' "$AC" | tail -n1)"
@@ -906,6 +912,9 @@ if [ -f "$AC" ]; then
   amap="$(sed -n 's/^music_map=//p' "$AC" | tail -n1)"
   apitch="$(sed -n 's/^sfx_pitch=//p' "$AC" | tail -n1)"
   avoice="$(sed -n 's/^voice=//p' "$AC" | tail -n1)"
+  avp="$(sed -n 's/^voice_pitch=//p' "$AC" | tail -n1)"
+  avpr="$(sed -n 's/^voice_pitch_rand=//p' "$AC" | tail -n1)"
+  avr="$(sed -n 's/^voice_random=//p' "$AC" | tail -n1)"
   amg="$(sed -n 's/^music_gain=//p' "$AC" | tail -n1)"
   asg="$(sed -n 's/^sfx_gain=//p' "$AC" | tail -n1)"
   avg="$(sed -n 's/^voice_gain=//p' "$AC" | tail -n1)"
@@ -926,6 +935,11 @@ RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/mn9mod-$(id -u)"
 mkdir -p "$RUNTIME"
 ln -sf "$LIB" "$RUNTIME/libmn9spawn.so"
 PRELOAD="$RUNTIME/libmn9spawn.so"
+SKINLIB="$GAME/.mn9charsel/libmn9skin.so"
+if [ -n "${skin:-}" ] && [ -f "$SKINLIB" ]; then
+  ln -sf "$SKINLIB" "$RUNTIME/libmn9skin.so"
+  PRELOAD="$PRELOAD:$RUNTIME/libmn9skin.so"
+fi
 if [ "$cel" = "1" ] && [ -f "$FX" ]; then
   ln -sf "$FX" "$RUNTIME/libpostfx.so"
   PRELOAD="$PRELOAD:$RUNTIME/libpostfx.so"
@@ -937,6 +951,9 @@ if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
   export MN9_AUDIO_MUSIC_DIR="${adir:-}"
   export MN9_AUDIO_SFX_PITCH="${apitch:-0}"
   export MN9_AUDIO_VOICE="${avoice:-game}"
+  export MN9_AUDIO_VOICE_PITCH="${avp:-1}"
+  export MN9_AUDIO_VOICE_PITCH_RAND="${avpr:-0}"
+  export MN9_AUDIO_VOICE_RANDOM="${avr:-0}"
   export MN9_AUDIO_MUSIC_GAIN="${amg:-1}"
   export MN9_AUDIO_SFX_GAIN="${asg:-1}"
   export MN9_AUDIO_VOICE_GAIN="${avg:-1}"
@@ -1042,17 +1059,23 @@ fi
         {
             if (File.Exists(real))
             {
+                // .real may still carry the mouse/PLT patches.  Put the original
+                // bytes back before moving it into place.
                 if (File.Exists(orig))
                     File.Copy(orig, real, overwrite: true);
+
                 if (IsBinaryShim(bin)) File.Delete(bin);
                 File.Move(real, bin, overwrite: true);
                 return "Game binary restored.";
             }
+
+            // No shim, but the installed binary may still be patched.
             if (File.Exists(orig) && File.Exists(bin) && !IsBinaryShim(bin))
             {
                 File.Copy(orig, bin, overwrite: true);
                 return "Game binary restored from backup.";
             }
+
             return "Binary shim is not installed.";
         }
         catch (Exception ex)
@@ -1396,6 +1419,8 @@ public static class MousePatch
         string bin = Path.Combine(gameDir, "Binaries/Linux/MN9Game.bin.x86_64");
         string real = bin + ".real";
         string game = File.Exists(real) ? real : bin;
+        // The original is backed up next to the launcher target, not next to
+        // the .real file.  Use the same .orig for both.
         string backup = File.Exists(real) ? bin + ".orig" : null;
         string sdl = Path.Combine(gameDir, "Binaries/Linux/lib64/libSDL2-2.0.so.0");
 
@@ -1923,6 +1948,21 @@ internal static class Cli
                                   diag + Environment.NewLine);
             }
             catch { }
+            return 0;
+        }
+        // ReXGlue managed-port import: extract XBLA/addons and build the port.
+        if (args.Contains("--port-install"))
+        {
+            var ps = Port.Read();
+            if (Arg(args, "--port-dir") is string pdir) ps.InstallDir = pdir;
+            var addons = new List<string>();
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i].Equals("--port-addon", StringComparison.OrdinalIgnoreCase))
+                    addons.Add(args[i + 1]);
+            string package = Arg(args, "--port-xbla")
+                ?? Arg(args, "--game-package") ?? "";
+            bool replace = !args.Contains("--port-merge");
+            Console.WriteLine(Port.InstallPort(ps, package, addons, replace, Console.WriteLine));
             return 0;
         }
         // ReXGlue port front-end: does not need a PC game dir.

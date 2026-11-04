@@ -52,23 +52,25 @@ public sealed class MainWindow : Window
 {
     private readonly TextBox _path = new() { Width = 470 };
     private readonly ComboBox _res = new() { Width = 140 };
-    private readonly ComboBox _quality = new()
+    private readonly ComboBox _pRes = new() { Width = 140 };
+    private readonly ComboBox _pQuality = new()
     {
         Width = 150,
         ItemsSource = Port.Qualities,
-        SelectedIndex = 1,   // "high" — smooth native-resolution preset
+        SelectedIndex = 1,
     };
-    private readonly CheckBox _skipIntro = new() { Content = "Skip intro screens (port)", IsChecked = true };
+    private readonly CheckBox _pFullscreen = new() { Content = "Fullscreen" };
+    private readonly CheckBox _pVsync = new() { Content = "VSync" };
+    private readonly CheckBox _pSkipIntro = new() { Content = "Skip intro screens", IsChecked = true };
+    private static readonly string[] ResolutionPresets =
+    {
+        "640x360", "960x540", "1024x768", "1280x720", "1280x800",
+        "1280x960", "1440x1080", "1680x1050", "1920x1080", "1920x1200",
+    };
     private readonly ComboBox _character = new() { Width = 180 };
     private readonly ComboBox _palette = new() { Width = 230 };
 
     // ReXGlue port controls
-    private readonly ComboBox _cvBackend = new()
-    {
-        Width = 190,
-        ItemsSource = new[] { "ReXGlue port (Vulkan)", "PC build (Steam)" },
-        SelectedIndex = 0,
-    };
     private readonly ComboBox _cvScale = new()
     {
         Width = 110,
@@ -83,7 +85,43 @@ public sealed class MainWindow : Window
     };
     private readonly ComboBox _cvMsaa = new() { Width = 100, ItemsSource = new[] { "preset", "on", "off" }, SelectedIndex = 0 };
     private readonly ComboBox _cvDither = new() { Width = 100, ItemsSource = new[] { "preset", "on", "off" }, SelectedIndex = 0 };
+    private readonly ComboBox _cvFxaa = new()
+    {
+        Width = 140,
+        ItemsSource = new[] { "preset", "on", "extreme", "off" },
+        SelectedIndex = 0,
+    };
     private readonly CheckBox _cvAsync = new() { Content = "Async shader compilation (may skip frames)" };
+    private readonly CheckBox _cvLowMem = new() { Content = "Low-memory mode (960x540, reduced caches)", IsChecked = true };
+    private readonly CheckBox _cvMnk = new() { Content = "Keyboard as controller (mnk mode)", IsChecked = true };
+    private readonly TextBox _cvSkipPresses = new() { Width = 70, Text = "2" };
+    private readonly TextBox _cvSkipGap = new() { Width = 70, Text = "4" };
+    private readonly TextBox _cvSkipDelay = new() { Width = 70, Text = "14" };
+    private static readonly int[] AudioVolumes = { 0, 25, 50, 75, 100 };
+    private readonly ComboBox _cvAudioMaster = new()
+    {
+        Width = 110,
+        ItemsSource = new[] { "0%", "25%", "50%", "75%", "100%" },
+        SelectedIndex = 4,
+    };
+    private readonly CheckBox _cvAudioEnable = new() { Content = "Enable port audio processing" };
+    private readonly CheckBox _cvAudioMute = new() { Content = "Mute all audio" };
+    private readonly CheckBox _cvAudioNight = new() { Content = "Night mode (compress peaks)" };
+    private readonly CheckBox _cvDlcGolden = new() { Content = "Golden Beck", IsChecked = true };
+    private readonly CheckBox _cvDlcMegaXel = new() { Content = "MegaXel Form", IsChecked = true };
+    private readonly CheckBox _cvDlcRay = new() { Content = "Ray Expansion", IsChecked = true };
+    private readonly CheckBox _cvDlcRetro = new() { Content = "Retro Hero", IsChecked = true };
+    private readonly TextBox _cvXbla = new() { Width = 360 };
+    private readonly TextBox _cvInstallDir = new() { Width = 360 };
+    private readonly ListBox _cvAddonList = new() { Height = 56, Width = 520 };
+    private readonly List<string> _addonSelections = new();
+    private readonly CheckBox _cvReplace = new() { Content = "Replace existing game data", IsChecked = true };
+    private readonly TextBlock _cvInstallStatus = new()
+    {
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = Brushes.Gray,
+        FontSize = 12,
+    };
     // Soft texture-cache cap in MB. The runtime doubles it for the hard cap, so
     // 4096 MB is the highest input that is fully accepted (hard = 8192 MB).
     private static readonly int[] TexCacheValues = { 0, 64, 128, 256, 512, 1024, 2048, 4096 };
@@ -124,6 +162,7 @@ public sealed class MainWindow : Window
         TextWrapping = TextWrapping.NoWrap,
     };
     private readonly Dictionary<string, TextBox> _cvKeys = new();
+    private bool _loadingPort;
     private static readonly int[] FpsValues = { 30, 60, 62, 72, 90, 120, 144, 240 };
     private readonly ComboBox _fps = new()
     {
@@ -177,6 +216,30 @@ public sealed class MainWindow : Window
         SelectedIndex = 4,
     };
 
+    private static readonly int[] TurboRateValues = { 6, 8, 10, 12, 15, 20 };
+    private static readonly int[] TurboButtonValues = { 2, 0, 1, 3 };   // X, A, B, Y
+    private static readonly int[] TurboPadValues = { -1, 8 };           // none, R3
+    private readonly CheckBox _turboEnabled = new() { Content = "Enable turbo auto-fire" };
+    private readonly ComboBox _turboButton = new()
+    {
+        Width = 160,
+        ItemsSource = new[] { "X (default)", "A", "B", "Y" },
+        SelectedIndex = 0,
+    };
+    private readonly ComboBox _turboRate = new()
+    {
+        Width = 120,
+        ItemsSource = new[] { "6 Hz", "8 Hz", "10 Hz", "12 Hz", "15 Hz", "20 Hz" },
+        SelectedIndex = 2,
+    };
+    private readonly ComboBox _turboPad = new()
+    {
+        Width = 190,
+        ItemsSource = new[] { "None", "R3 (Direct Change 3)" },
+        SelectedIndex = 0,
+    };
+    private readonly TextBox _turboKey = new() { Width = 110, Watermark = "blank = always on" };
+
     private readonly CheckBox _shadows = new() { Content = "Shadows", IsChecked = true };
     private readonly CheckBox _bloom = new() { Content = "Bloom / FXAA", IsChecked = true };
     private readonly CheckBox _motion = new() { Content = "Motion blur", IsChecked = true };
@@ -223,7 +286,7 @@ public sealed class MainWindow : Window
     private readonly CheckBox _auNight = new() { Content = "Night mode (compress peaks)" };
     private readonly CheckBox _fullscreen = new() { Content = "Fullscreen" };
     private readonly CheckBox _vsync = new() { Content = "VSync", IsChecked = true };
-    private readonly CheckBox _voice = new() { Content = "Steam voice" };
+    private readonly CheckBox _voice = new() { Content = "Steam voice", IsChecked = true };
     private readonly CheckBox _movies = new() { Content = "Play intro movies" };
     private readonly CheckBox _mouse = new() { Content = "Free the mouse (external patch)" };
     private readonly CheckBox _laa = new() { Content = "Large Address Aware (32-bit game, up to 4 GB)" };
@@ -244,30 +307,6 @@ public sealed class MainWindow : Window
         ItemsSource = new[] { "Off", "Retro — Soft", "Retro — 8-bit", "Retro — CRT", "Noir", "Dot Matrix", "Cinematic", "Posterize", "Metallic — smooth" },
         SelectedIndex = 8,
     };
-
-    private static readonly int[] TurboRateValues = { 6, 8, 10, 12, 15, 20 };
-    private static readonly int[] TurboButtonValues = { 2, 0, 1, 3 };   // X, A, B, Y
-    private static readonly int[] TurboPadValues = { -1, 8 };           // none, R3
-    private readonly CheckBox _turboEnabled = new() { Content = "Enable turbo auto-fire" };
-    private readonly ComboBox _turboButton = new()
-    {
-        Width = 160,
-        ItemsSource = new[] { "X (default)", "A", "B", "Y" },
-        SelectedIndex = 0,
-    };
-    private readonly ComboBox _turboRate = new()
-    {
-        Width = 120,
-        ItemsSource = new[] { "6 Hz", "8 Hz", "10 Hz", "12 Hz", "15 Hz", "20 Hz" },
-        SelectedIndex = 2,
-    };
-    private readonly ComboBox _turboPad = new()
-    {
-        Width = 190,
-        ItemsSource = new[] { "None", "R3 (Direct Change 3)" },
-        SelectedIndex = 0,
-    };
-    private readonly TextBox _turboKey = new() { Width = 110, Watermark = "blank = always on" };
 
     private readonly TextBlock _characterNote = new()
     {
@@ -312,9 +351,10 @@ public sealed class MainWindow : Window
 
     public MainWindow()
     {
+        string launcherVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.3.0";
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.2.0 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.2.0 — Mighty No. 9 (32-bit)";
+            ? $"Xel Launcher {launcherVersion} — Mighty No. 9 (64-bit)"
+            : $"Xel Launcher {launcherVersion} — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -323,20 +363,10 @@ public sealed class MainWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(Color.Parse("#081522"));
 
-        _res.ItemsSource = new[]
-        {
-            "640x360",   // 16:9
-            "960x540",   // 16:9
-            "1024x768",  // 4:3
-            "1280x720",  // 16:9
-            "1280x800",  // 16:10
-            "1280x960",  // 4:3
-            "1440x1080", // 4:3
-            "1680x1050", // 16:10
-            "1920x1080", // 16:9
-            "1920x1200", // 16:10
-        };
+        _res.ItemsSource = ResolutionPresets;
         _res.SelectedIndex = 8;   // 1920x1080 — avoids shrinking the game by default
+        _pRes.ItemsSource = ResolutionPresets;
+        _pRes.SelectedIndex = 1;  // 960x540 — low-memory port default
 
         _character.ItemsSource = Patcher.CharacterNames;
         _character.SelectedIndex = 0;
@@ -371,10 +401,19 @@ public sealed class MainWindow : Window
         {
             SaveAudio();
             _status.Text = "Launching the ReXGlue port...";
+            PortSettings portSettings = CollectPort();
             WindowState = WindowState.Minimized;
-            string msg = await Task.Run(() => Port.Launch(CollectPort()));
-            WindowState = WindowState.Normal;
-            _status.Text = msg;
+            try
+            {
+                string msg = await Task.Run(() => Port.Launch(portSettings));
+                WindowState = WindowState.Normal;
+                _status.Text = msg;
+            }
+            catch (Exception ex)
+            {
+                WindowState = WindowState.Normal;
+                _status.Text = "Port launch failed: " + ex.Message;
+            }
         };
 
         var launchSteam = new Button { Content = "Launch Steam version" };
@@ -468,12 +507,34 @@ public sealed class MainWindow : Window
         Tip(detect, "Find the game folder from Steam.");
 
         Tip(_res, "Render resolution written to the port and the PC INIs.");
-        Tip(_quality, "Port image quality: max = 2x supersampling (heavy), high = native 8x anisotropy + MSAA (smooth), balanced/performance = lighter.");
-        Tip(_skipIntro, "Focus the port window and send A to skip the title screen, first-run dialog and opening story slides.");
+        Tip(_pQuality, "Port image quality: max = 2x supersampling (heavy), high = native 8x anisotropy + MSAA (smooth), balanced/performance = lighter.");
+        Tip(_pSkipIntro, "Focus the port window and send A to skip the title screen, first-run dialog and opening story slides.");
+        Tip(_pRes, "Port render resolution written to the ReXGlue config.");
+        Tip(_pFullscreen, "Run the port fullscreen instead of a window.");
+        Tip(_pVsync, "Synchronize the port to the display refresh rate.");
+        Tip(_cvSkipPresses, "Number of A presses used by the intro skipper. 0 = title only; 2 = title + first-run dialog; 4 = also advance story slides.");
+        Tip(_cvSkipGap, "Seconds between intro-skip A presses.");
+        Tip(_cvSkipDelay, "Seconds to wait after the game window appears before the first skip press.");
+        Tip(_cvLowMem, "Port low-memory mode: native draw scale, no anisotropy/MSAA/dither, and small texture caches. Keeps the 960x540 default light.");
+        Tip(_cvMnk, "Run with keyboard-as-controller: Space=A, Backspace=B, Enter=Start, arrows/WASD=stick, mouse=right stick.");
+        Tip(_cvFxaa, "Port-only FXAA pass from the Vulkan GPU plugin. preset leaves the runtime default; extreme is the heavier FXAA variant.");
+        Tip(_cvAudioEnable, "Enable the port audio post-process. Also enabled automatically when master volume is below 100% or night mode is on. When off, the runtime uses the stock SDL audio path.");
+        Tip(_cvAudioMaster, "Master output gain applied to the port's 5.1 audio before it reaches the device.");
+        Tip(_cvAudioMute, "Mute the port's audio output while leaving the guest audio running.");
+        Tip(_cvAudioNight, "Soft peak compression for quiet listening; raises quiet detail and tames loud peaks.");
+        Tip(_cvDlcGolden, "Stage the Golden Beck addon (DLC). Select it in game from the character menu.");
+        Tip(_cvDlcMegaXel, "Stage the MegaXel Form addon (DLC). Select it in game from the character menu.");
+        Tip(_cvDlcRay, "Stage the Ray Expansion addon (DLC). Ray keeps his own moveset.");
+        Tip(_cvDlcRetro, "Stage the Retro Hero addon (DLC).");
         Tip(_cvTexCache, "Soft texture-cache cap. The runtime doubles it for the hard cap: 64 MB minimum, 4096 MB maximum (hard 8192 MB). Values outside that range are rejected; Auto keeps the low-memory 128/256 MB defaults.");
         Tip(_fps, "Frame cap written to MaxSmoothedFrameRate. 62 is the physics-safe default; higher values can change movement and pacing.");
         Tip(_pool, "Texture streaming pool in MB (PoolSize). Higher keeps more textures resident; lower saves VRAM.");
         Tip(_physics, "Physics substeps per frame (MaxPhysicsSubsteps). 5 is the game default; higher is more stable but slower.");
+        Tip(_turboEnabled, "Auto-fire for the Linux PC build: holding the fire button keeps shooting.");
+        Tip(_turboButton, "Controller button used for fire. X is the game's default attack button.");
+        Tip(_turboRate, "Auto-fire taps per second. 10 Hz is a good default; too high can drop inputs.");
+        Tip(_turboPad, "Use R3 as the auto-fire toggle. R3 stops performing Direct Change 3 while selected.");
+        Tip(_turboKey, "Optional keyboard key that turns auto-fire on/off while playing. Leave blank for always on.");
         Tip(_shadows, "Dynamic character and world shadows.");
         Tip(_bloom, "Bloom glow and the game's FXAA anti-aliasing.");
         Tip(_motion, "Motion blur and pause-menu blur.");
@@ -485,7 +546,7 @@ public sealed class MainWindow : Window
         Tip(_msaa, "Hardware MSAA. Broken on this retail build.");
         Tip(_fullscreen, "Run fullscreen instead of a window.");
         Tip(_vsync, "Synchronize to the display refresh rate.");
-        Tip(_voice, "Enable Steam voice-chat support.");
+        Tip(_voice, "Steam voice interface (retail default on). Turning it off writes bHasVoiceEnabled=False.");
         Tip(_movies, "Play the startup/intro movies.");
         Tip(_mouse, "External patch that releases the mouse cursor from the game window.");
         Tip(_laa, "Allow the 32-bit executable to use up to 4 GB of address space.");
@@ -495,11 +556,6 @@ public sealed class MainWindow : Window
         Tip(_postShader, "Post-process style: Metallic (smooth, default), retro (pixelation/quantisation), Noir, Dot Matrix, Cinematic or Posterize.");
         Tip(_retroTex, "Texture-level retro look: nearest-neighbour filtering and 256px max mips (also lowers VRAM).");
         Tip(_fxaa, "Post-process FXAA. Smooths model and texture edges; works with the selected post style. Costs 8 texture taps.");
-        Tip(_turboEnabled, "Auto-fire for the Linux PC build: holding the fire button keeps shooting.");
-        Tip(_turboButton, "Controller button used for fire. X is the game's default attack button.");
-        Tip(_turboRate, "Auto-fire taps per second. 10 Hz is a good default; too high can drop inputs.");
-        Tip(_turboPad, "Use R3 as the auto-fire toggle. R3 stops performing Direct Change 3 while selected.");
-        Tip(_turboKey, "Optional keyboard key that turns auto-fire on/off while playing. Leave blank for always on.");
         Tip(_character, "Choose the character used by the spawn override.");
         Tip(setChar, "Save the selection without launching.");
         Tip(launchChar, "Save the selection, install the Steam shim, and launch through Steam.");
@@ -528,12 +584,17 @@ public sealed class MainWindow : Window
         };
 
         var portDisplay = Section("Display & launch",
-            Row("Resolution", _res, "Quality preset", _quality),
-            CheckList(_fullscreen, _vsync, _skipIntro),
-            Row("Start at", _cvStart, "License mask", _cvLicense));
+            Row("Resolution", _pRes, "Quality preset", _pQuality),
+            CheckList(_pFullscreen, _pVsync, _pSkipIntro),
+            Row("Start at", _cvStart, "License mask", _cvLicense),
+            Row("Skip presses", _cvSkipPresses, "Skip gap (s)", _cvSkipGap),
+            SimpleRow("Skip delay (s)", _cvSkipDelay),
+            CheckList(_cvLowMem, _cvMnk));
 
-        var pcDisplay = Section("PC build display (Steam only)",
-            Row("Frame cap (PC)", _fps, "Texture pool (PC)", _pool),
+        var pcDisplay = Section("Steam display",
+            Row("Resolution", _res, "Frame cap (PC)", _fps),
+            CheckList(_fullscreen, _vsync),
+            SimpleRow("Texture pool (PC)", _pool),
             physicsRow);
 
         var pcNote = new TextBlock
@@ -559,31 +620,16 @@ public sealed class MainWindow : Window
             },
         };
 
-        var turbo = Section("Turbo auto-fire (Linux PC build)",
-            CheckList(_turboEnabled),
-            Row("Fire button", _turboButton, "Rate", _turboRate),
-            SimpleRow("Pad toggle", _turboPad),
-            SimpleRow("Toggle key", _turboKey),
-            new TextBlock
-            {
-                Text = "Holding the fire button taps it at the selected rate. The left mouse button is handled automatically. " +
-                       "Pad toggle R3 stops doing Direct Change 3 and turns auto-fire on/off instead. " +
-                       "The optional toggle key does the same; blank means always on. Linux PC build only.",
-                Foreground = Brushes.Gray,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-            });
-
         var effects = Section("Effects",
             CheckList(_shadows, _bloom, _motion, _shafts, _distortion, _flares, _ao, _mlaa, _msaa),
             postRow,
             CheckList(_retroTex, _fxaa));
 
-        var graphics = new StackPanel
-        {
-            Margin = new Thickness(14),
-            Children = { pcNote, pcDisplay, turbo, effects },
-        };
+        var turbo = Section("Turbo auto-fire (Linux PC build)",
+            CheckList(_turboEnabled),
+            Row("Fire button", _turboButton, "Rate", _turboRate),
+            SimpleRow("Pad toggle", _turboPad),
+            SimpleRow("Toggle key", _turboKey));
 
         var gameplay = new StackPanel
         {
@@ -601,6 +647,7 @@ public sealed class MainWindow : Window
                         FontSize = 12,
                         Margin = new Thickness(0, 6, 0, 0),
                     }),
+                turbo,
                 Section("Runtime notes",
                     new TextBlock
                     {
@@ -705,18 +752,46 @@ public sealed class MainWindow : Window
         };
 
         var portTab = BuildPortTab(portDisplay);
-        var tabs = new TabControl
+        var steamSetup = new StackPanel
         {
-            Margin = new Thickness(18, 10, 18, 0),
+            Margin = new Thickness(14),
+            Spacing = 6,
+            Children =
+            {
+                pcNote,
+                Section("Steam build",
+                    new TextBlock
+                    {
+                        Text = "This page edits the retail PC build (Steam app 314710). Use the Game box at the top, " +
+                               "then Apply settings / Launch Steam version at the bottom. The direct-stage test is " +
+                               "also in the bottom bar.",
+                        Foreground = Brushes.Gray,
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                    }),
+            },
+        };
+        var steamTabs = new TabControl
+        {
             Items =
             {
-                new TabItem { Header = "Port", Content = portTab },
-                new TabItem { Header = "PC build", Content = new ScrollViewer { Content = graphics } },
+                new TabItem { Header = "Setup", Content = new ScrollViewer { Content = steamSetup } },
+                new TabItem { Header = "Display", Content = new ScrollViewer { Content = new StackPanel { Margin = new Thickness(14), Children = { pcDisplay } } } },
+                new TabItem { Header = "Quality", Content = new ScrollViewer { Content = new StackPanel { Margin = new Thickness(14), Children = { effects } } } },
                 new TabItem { Header = "Audio", Content = BuildAudioTab() },
                 new TabItem { Header = "Gameplay", Content = new ScrollViewer { Content = gameplay } },
                 new TabItem { Header = "Character", Content = new ScrollViewer { Content = character } },
                 new TabItem { Header = "Saves", Content = new ScrollViewer { Content = saves } },
                 new TabItem { Header = "Advanced", Content = new ScrollViewer { Content = advanced } },
+            },
+        };
+        var pages = new TabControl
+        {
+            Margin = new Thickness(18, 10, 18, 0),
+            Items =
+            {
+                new TabItem { Header = "Port", Content = portTab },
+                new TabItem { Header = "Steam", Content = steamTabs },
             },
         };
 
@@ -826,8 +901,13 @@ public sealed class MainWindow : Window
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(headerPanel);
         root.Children.Add(bottom);
-        root.Children.Add(tabs);
+        root.Children.Add(pages);
         LoadPortSettings();
+        _cvStart.SelectionChanged += (_, _) =>
+        {
+            if (_loadingPort) return;
+            _cvSkipPresses.Text = _cvStart.SelectedIndex switch { 0 => "0", 2 => "4", _ => "2" };
+        };
 
         var bgImage = new Image
         {
@@ -853,8 +933,15 @@ public sealed class MainWindow : Window
         var bgGrid = new Grid { Children = { bgImage, bgOverlay, bgMark } };
         var shell = new Grid { Children = { bgGrid, root } };
         Content = shell;
-        if (int.TryParse(Environment.GetEnvironmentVariable("MN9_TAB"), out int tabIndex))
-            tabs.SelectedIndex = Math.Clamp(tabIndex, 0, 4);
+        if (int.TryParse(Environment.GetEnvironmentVariable("MN9_PAGE"), out int pageIndex))
+            pages.SelectedIndex = Math.Clamp(pageIndex, 0, 1);
+        else if (int.TryParse(Environment.GetEnvironmentVariable("MN9_TAB"), out int tabIndex))
+            pages.SelectedIndex = Math.Clamp(tabIndex, 0, 1);
+        if (pages.SelectedIndex >= 0 &&
+            pages.Items[pages.SelectedIndex] is TabItem selectedPage &&
+            selectedPage.Content is TabControl nestedTabs &&
+            int.TryParse(Environment.GetEnvironmentVariable("MN9_SUBTAB"), out int subTab))
+            nestedTabs.SelectedIndex = Math.Clamp(subTab, 0, nestedTabs.Items.Count - 1);
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))
@@ -899,7 +986,6 @@ public sealed class MainWindow : Window
         RefreshSaveBackups(_path.Text?.Trim());
         SyncCharacter(_path.Text?.Trim());
         SyncPcTuning(_path.Text?.Trim());
-        SyncTurbo(_path.Text?.Trim());
         LoadAudioSettings();
     }
 
@@ -941,32 +1027,6 @@ public sealed class MainWindow : Window
         _fps.SelectedIndex = NearestIndex(FpsValues, fps);
         _pool.SelectedIndex = NearestIndex(PoolValues, pool);
         _physics.SelectedIndex = NearestIndex(PhysicsValues, physics);
-    }
-
-    private void SyncTurbo(string dir)
-    {
-        var (enabled, rate, button, key, pad) = Patcher.ReadTurbo(dir ?? "");
-        _turboEnabled.IsChecked = enabled;
-        _turboRate.SelectedIndex = NearestIndex(TurboRateValues, (int)Math.Round(rate));
-        int bi = Array.IndexOf(TurboButtonValues, button);
-        _turboButton.SelectedIndex = bi >= 0 ? bi : 0;
-        int pi = Array.IndexOf(TurboPadValues, pad);
-        _turboPad.SelectedIndex = pi >= 0 ? pi : 0;
-        _turboKey.Text = key;
-    }
-
-    private void SyncPalette(string dir)
-    {
-        if (string.IsNullOrEmpty(dir)) return;
-        _palette.SelectedIndex = PaletteSettings.Read(dir);
-    }
-
-    private void SavePalette(string dir)
-    {
-        if (string.IsNullOrEmpty(dir)) return;
-        if (!Directory.Exists(Path.Combine(dir, "MN9Game", "Config"))) return;
-        int index = Math.Clamp(_palette.SelectedIndex, 0, PaletteSettings.Names.Length - 1);
-        PaletteSettings.Write(dir, index);
     }
 
     private void SyncCharacter(string dir)
@@ -1029,6 +1089,32 @@ public sealed class MainWindow : Window
         };
     }
 
+    private void SyncTurbo(string dir)
+    {
+        var (enabled, rate, button, key, pad) = Patcher.ReadTurbo(dir ?? "");
+        _turboEnabled.IsChecked = enabled;
+        _turboRate.SelectedIndex = NearestIndex(TurboRateValues, (int)Math.Round(rate));
+        int bi = Array.IndexOf(TurboButtonValues, button);
+        _turboButton.SelectedIndex = bi >= 0 ? bi : 0;
+        int pi = Array.IndexOf(TurboPadValues, pad);
+        _turboPad.SelectedIndex = pi >= 0 ? pi : 0;
+        _turboKey.Text = key;
+    }
+
+    private void SyncPalette(string dir)
+    {
+        if (string.IsNullOrEmpty(dir)) return;
+        _palette.SelectedIndex = PaletteSettings.Read(dir);
+    }
+
+    private void SavePalette(string dir)
+    {
+        if (string.IsNullOrEmpty(dir)) return;
+        if (!Directory.Exists(Path.Combine(dir, "MN9Game", "Config"))) return;
+        int index = Math.Clamp(_palette.SelectedIndex, 0, PaletteSettings.Names.Length - 1);
+        PaletteSettings.Write(dir, index);
+    }
+
     private void SaveOptions(string dir)
     {
         Patcher.WriteOptions(dir,
@@ -1075,6 +1161,9 @@ public sealed class MainWindow : Window
             ? "No save backups yet."
             : $"{_saveBackups.Count} backup(s) in .mn9patcher/saves (latest first).";
     }
+
+    private static int IntOr(string? text, int fallback) =>
+        int.TryParse(text?.Trim(), out int value) ? value : fallback;
 
     private static string FormatSize(long bytes) => bytes switch
     {
@@ -1139,9 +1228,10 @@ public sealed class MainWindow : Window
         s.Height = int.Parse(wh[1]);
 
         _status.Text = "Applying...";
-        SavePalette(dir);
         string applied = Patcher.Apply(dir, s);
-        string portApplied = Port.Apply(CollectPort());
+        SavePalette(dir);
+        var portSettings = CollectPort();
+        string portApplied = Port.HasConfig(portSettings) ? Port.Apply(portSettings) : "";
         string character = Patcher.SetCharacter(dir, SelectedCharacter());
         SaveOptions(dir);
         int turboRate = TurboRateValues[Math.Clamp(_turboRate.SelectedIndex, 0, TurboRateValues.Length - 1)];
@@ -1150,8 +1240,10 @@ public sealed class MainWindow : Window
         string turboSaved = Patcher.WriteTurbo(dir, _turboEnabled.IsChecked == true,
             turboRate, turboButton, _turboKey.Text ?? "", turboPad);
         string install = Patcher.InstallModFiles(dir);
-        _status.Text = applied + Environment.NewLine + portApplied + Environment.NewLine +
-                       character + Environment.NewLine + turboSaved + Environment.NewLine + install;
+        _status.Text = applied +
+                       (portApplied.Length > 0 ? Environment.NewLine + portApplied : "") +
+                       Environment.NewLine + character + Environment.NewLine +
+                       turboSaved + Environment.NewLine + install;
     }
 
     private Control BuildAudioTab()
@@ -1247,7 +1339,7 @@ public sealed class MainWindow : Window
 
     // In-app path picker. The native XDG/Dolphin dialog can freeze on KDE, so
     // this dialog only uses Directory.GetDirectories/GetFiles.
-    private async Task<string?> PickPath(string start, bool files)
+    private async Task<string?> PickPath(string start, bool files, bool allFiles = false)
     {
         string current = Directory.Exists(start) ? start
             : File.Exists(start) ? (Path.GetDirectoryName(start) ?? "/")
@@ -1255,7 +1347,7 @@ public sealed class MainWindow : Window
 
         var win = new Window
         {
-            Title = files ? "Select a map file" : "Select a music folder",
+            Title = files ? (allFiles ? "Select a file" : "Select a map file") : "Select a music folder",
             Width = 780,
             Height = 560,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -1279,7 +1371,8 @@ public sealed class MainWindow : Window
                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
                 if (files)
                     items.AddRange(Directory.GetFiles(current)
-                        .Where(f => f.EndsWith(".map", StringComparison.OrdinalIgnoreCase) ||
+                        .Where(f => allFiles ||
+                                    f.EndsWith(".map", StringComparison.OrdinalIgnoreCase) ||
                                     f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
                         .OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
                 status.Text = items.Count + " item(s)";
@@ -1444,24 +1537,140 @@ public sealed class MainWindow : Window
 
     private Control BuildPortTab(Control displaySection)
     {
-        var backendRow = SimpleRow("Backend", _cvBackend);
+        var browseXbla = new Button { Content = "Browse..." };
+        var browseInstall = new Button { Content = "Browse..." };
+        var addAddon = new Button { Content = "Add..." };
+        var removeAddon = new Button { Content = "Remove" };
+        var installPort = new Button { Content = "Extract && install port", MinWidth = 190 };
+        browseXbla.Click += async (_, _) =>
+        {
+            string? picked = await PickPath(_cvXbla.Text ?? "", true, allFiles: true);
+            if (picked != null) _cvXbla.Text = picked;
+        };
+        browseInstall.Click += async (_, _) =>
+        {
+            string start = string.IsNullOrWhiteSpace(_cvInstallDir.Text)
+                ? Port.DefaultManagedRoot : _cvInstallDir.Text!;
+            string? picked = await PickPath(start, false);
+            if (picked != null) _cvInstallDir.Text = picked;
+        };
+        addAddon.Click += async (_, _) =>
+        {
+            string? picked = await PickPath(_cvXbla.Text ?? "", true, allFiles: true);
+            if (picked != null)
+            {
+                _addonSelections.Add(picked);
+                _cvAddonList.ItemsSource = _addonSelections.ToList();
+            }
+        };
+        removeAddon.Click += (_, _) =>
+        {
+            if (_cvAddonList.SelectedItem is string sel)
+            {
+                _addonSelections.Remove(sel);
+                _cvAddonList.ItemsSource = _addonSelections.ToList();
+            }
+        };
+        installPort.Click += async (_, _) =>
+        {
+            string xbla = _cvXbla.Text?.Trim() ?? "";
+            if (xbla.Length == 0)
+            {
+                _cvInstallStatus.Text = "Choose the XBLA package (or an extracted game folder) first.";
+                return;
+            }
+            PortSettings ps = CollectPort();
+            ps.InstallDir = _cvInstallDir.Text?.Trim() ?? "";
+            bool replace = _cvReplace.IsChecked == true;
+            string[] addons = _addonSelections.ToArray();
+            installPort.IsEnabled = false;
+            _cvInstallStatus.Text = "Installing the port...";
+            try
+            {
+                IProgress<string> progress = new Progress<string>(m => _cvInstallStatus.Text = m);
+                string msg = await Task.Run(() =>
+                    Port.InstallPort(ps, xbla, addons, replace, m => progress.Report(m)));
+                LoadPortSettings();
+                _cvInstallStatus.Text = msg;
+            }
+            catch (Exception ex)
+            {
+                _cvInstallStatus.Text = "Install failed: " + ex.Message;
+            }
+            finally
+            {
+                installPort.IsEnabled = true;
+            }
+        };
+        var installSection = Section("Install the port from XBLA",
+            SimpleRow("XBLA package", new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _cvXbla, browseXbla },
+            }),
+            SimpleRow("Install folder", new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { _cvInstallDir, browseInstall },
+            }),
+            new TextBlock
+            {
+                Text = "Optional addon packages (DLC). Add each package file or its extracted folder; " +
+                       "they are copied into the port's content folder and unlocked with the game.",
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            },
+            _cvAddonList,
+            new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children = { addAddon, removeAddon },
+            },
+            CheckList(_cvReplace),
+            installPort,
+            _cvInstallStatus,
+            new TextBlock
+            {
+                Text = "The XBLA package is extracted with the bundled STFS tool, the bundled runtime is copied " +
+                       "into the install folder, and port.conf is written with license_mask=4294967295 so the " +
+                       "game builds as fully unlocked. Existing game data is replaced when the checkbox is on.",
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            });
 
         var quality = Section("Fine image quality",
             Row("Draw scale", _cvScale, "Anisotropy", _cvAniso),
             Row("MSAA", _cvMsaa, "Dither", _cvDither),
+            SimpleRow("FXAA (port)", _cvFxaa),
             SimpleRow("Texture cache (soft cap)", _cvTexCache),
             _cvAsync);
 
         var contentRefresh = new Button { Content = "Refresh" };
         var contentOpen = new Button { Content = "Open folder" };
-        contentRefresh.Click += (_, _) => _cvContent.Text = Port.ContentStatus();
-        contentOpen.Click += (_, _) => Port.OpenFolder(Port.ContentDir);
-        var content = Section("Content & unlock",
-            new StackPanel
+        var contentApply = new Button { Content = "Apply addon selection" };
+        contentRefresh.Click += (_, _) => _cvContent.Text = Port.ContentStatusFor(CollectPort());
+        contentOpen.Click += (_, _) => Port.OpenFolder(Port.ContentDirFor(CollectPort()));
+        contentApply.Click += (_, _) => _cvContent.Text = Port.ApplyContent(CollectPort());
+        var content = Section("Characters & addon packs",
+            CheckList(_cvDlcGolden, _cvDlcMegaXel, _cvDlcRay, _cvDlcRetro),
+            new TextBlock
+            {
+                Text = "Checked packs are copied into the port's DLC folder; unchecked packs are removed. " +
+                       "In game, pick the form from the character/Extra menu. The packs keep their own " +
+                       "models and movesets (Ray included), so Beck's controller is not forced onto them.",
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            },
+            new WrapPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 10,
-                Children = { contentRefresh, contentOpen },
+                Children = { contentApply, contentRefresh, contentOpen },
             },
             _cvContent);
 
@@ -1489,11 +1698,11 @@ public sealed class MainWindow : Window
         var logOpen = new Button { Content = "Open logs" };
         logRefresh.Click += (_, _) =>
         {
-            _cvLog.Text = Port.TailLog();
+            _cvLog.Text = Port.TailLog(CollectPort());
             _cvStatus.Text = Port.StatusLine(CollectPort());
         };
         cacheClear.Click += (_, _) => _cvStatus.Text = Port.ClearShaderCache(CollectPort());
-        logOpen.Click += (_, _) => Port.OpenFolder(Port.LogDir);
+        logOpen.Click += (_, _) => Port.OpenFolder(Port.LogDirFor(CollectPort()));
         var diag = Section("Diagnostics",
             _cvStatus,
             new WrapPanel
@@ -1542,23 +1751,99 @@ public sealed class MainWindow : Window
             keyPanel,
             keyReset);
 
+        var audio = Section("Audio (port)",
+            SimpleRow("Master volume", _cvAudioMaster),
+            CheckList(_cvAudioEnable, _cvAudioMute, _cvAudioNight),
+            new TextBlock
+            {
+                Text = "Applies a master gain, mute and a soft peak compressor to the port's 5.1 output. " +
+                       "Per-bus music/SFX/voice gains, pitch randomizers, dialog shuffle, ducking and " +
+                       "music replacement use the PC OpenAL shim, so they stay on the Audio tab for Steam.",
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+        var pcOnly = Section("PC-only options (not available in the port)",
+            new TextBlock
+            {
+                Text = "These remain on their PC tabs and only affect the Steam build:\n" +
+                       "• Effects: shadows, bloom, motion blur, light shafts, distortion, lens flares, " +
+                       "ambient occlusion, MLAA, retro textures and the custom post-process styles " +
+                       "(Retro/Noir/Dot Matrix/Cinematic/Posterize).\n" +
+                       "• Audio: per-bus gains, SFX/voice pitch, dialog shuffle, ducking and music replacement.\n" +
+                       "• Gameplay: auto-skip cutscenes and disable-dialog.\n" +
+                       "• Character: the Call skin, Regular/Boss 1–8 palettes and random boss per stage " +
+                       "(the palette shim reads PC UE3 objects). The port installs the official " +
+                       "Golden/MegaXel/Ray/Retro addons instead.\n" +
+                       "• Advanced: Steam voice, mouse release, Large Address Aware, config lock, intro " +
+                       "movies, PC frame cap, texture pool and physics substeps, plus the direct-stage test launch.",
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
         var note = new TextBlock
         {
-            Text = "Launch runs the ReXGlue Xbox 360 port. Settings are written to " +
-                   "~/Projects/mn9-hybrid/mn9-hybrid.conf; the PC-only tabs are kept for Steam.",
+            Text = "Launch runs the ReXGlue Xbox 360 port. An installed port writes <install>/port.conf; " +
+                   "the dev fallback writes ~/Projects/mn9-hybrid/mn9-hybrid.conf. The PC-only tabs are kept for Steam. " +
+                   "The port's install, display, quality, audio, addons, saves, keys and diagnostics are all on this tab.",
             Foreground = Brushes.Gray,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
-        var root = new StackPanel
+        var setup = new StackPanel
         {
             Margin = new Thickness(14),
             Spacing = 6,
-            Children = { note, backendRow, displaySection, quality, content, saves, diag, keys },
+            Children = { note, installSection },
         };
-        return new ScrollViewer { Content = root };
+        var display = new StackPanel
+        {
+            Margin = new Thickness(14),
+            Spacing = 6,
+            Children = { displaySection },
+        };
+        var portGameplay = new StackPanel
+        {
+            Margin = new Thickness(14),
+            Spacing = 6,
+            Children =
+            {
+                Section("Port gameplay",
+                    new TextBlock
+                    {
+                        Text = "The port uses Start at / Skip intro screens on Display. Auto-skip cutscenes and " +
+                               "disable-dialog are retail PC shims and stay on the Steam page; use the game's own " +
+                               "skip button during story scenes.",
+                        Foreground = Brushes.Gray,
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.Wrap,
+                    }),
+            },
+        };
+        var advanced = new StackPanel
+        {
+            Margin = new Thickness(14),
+            Spacing = 6,
+            Children = { keys, diag, pcOnly },
+        };
+        return new TabControl
+        {
+            Items =
+            {
+                new TabItem { Header = "Setup", Content = new ScrollViewer { Content = setup } },
+                new TabItem { Header = "Display", Content = new ScrollViewer { Content = display } },
+                new TabItem { Header = "Quality", Content = new ScrollViewer { Content = quality } },
+                new TabItem { Header = "Audio", Content = new ScrollViewer { Content = audio } },
+                new TabItem { Header = "Gameplay", Content = new ScrollViewer { Content = portGameplay } },
+                new TabItem { Header = "Character", Content = new ScrollViewer { Content = content } },
+                new TabItem { Header = "Saves", Content = new ScrollViewer { Content = saves } },
+                new TabItem { Header = "Advanced", Content = new ScrollViewer { Content = advanced } },
+            },
+        };
     }
 
     private static StackPanel SimpleRow(string label, Control control, double width = 190) => new()
@@ -1574,8 +1859,8 @@ public sealed class MainWindow : Window
 
     private void LoadPortSettings()
     {
+        _loadingPort = true;
         var ps = Port.Read();
-        _cvBackend.SelectedIndex = ps.Backend == "pc" ? 1 : 0;
         _cvScale.SelectedIndex = ps.Scale switch { "1" => 1, "2" => 2, "3" => 3, _ => 0 };
         _cvAniso.SelectedIndex = ps.Aniso switch
         {
@@ -1583,46 +1868,84 @@ public sealed class MainWindow : Window
         };
         _cvMsaa.SelectedIndex = ps.Msaa == "1" ? 1 : ps.Msaa == "0" ? 2 : 0;
         _cvDither.SelectedIndex = ps.Dither == "1" ? 1 : ps.Dither == "0" ? 2 : 0;
+        _cvFxaa.SelectedIndex = ps.Fxaa switch { "on" => 1, "extreme" => 2, "off" => 3, _ => 0 };
         _cvAsync.IsChecked = ps.AsyncShaders == "1";
+        _cvLowMem.IsChecked = ps.LowMemory;
+        _cvMnk.IsChecked = ps.MnkMode;
+        _cvSkipPresses.Text = ps.SkipPresses.ToString();
+        _cvSkipGap.Text = ps.SkipGap.ToString();
+        _cvSkipDelay.Text = ps.SkipDelay.ToString();
+        _cvAudioEnable.IsChecked = ps.AudioEnabled;
+        _cvAudioMute.IsChecked = ps.AudioMute;
+        _cvAudioNight.IsChecked = ps.AudioNight;
+        _cvAudioMaster.SelectedIndex = Math.Clamp((int)Math.Round(ps.AudioMaster / 25.0), 0, 4);
+        _cvDlcGolden.IsChecked = ps.DlcGolden;
+        _cvDlcMegaXel.IsChecked = ps.DlcMegaXel;
+        _cvDlcRay.IsChecked = ps.DlcRay;
+        _cvDlcRetro.IsChecked = ps.DlcRetro;
+        _cvInstallDir.Text = string.IsNullOrWhiteSpace(ps.InstallDir)
+            ? Port.DefaultManagedRoot : ps.InstallDir;
+        _cvInstallStatus.Text = Port.UseManaged(ps)
+            ? "Installed port: " + ps.InstallDir
+            : "No managed port installed yet; Launch port uses the dev hybrid if available.";
         int texIdx = Array.IndexOf(TexCacheValues, ps.TextureCacheMb);
         _cvTexCache.SelectedIndex = texIdx >= 0 ? texIdx : 0;
         _cvStart.SelectedIndex = ps.StartMode switch { "title" => 0, "game" => 2, _ => 1 };
         _cvLicense.Text = ps.LicenseMask;
         _cvUserData.Text = ps.UserDataRoot;
-        _quality.SelectedItem = ps.Quality;
-        _res.SelectedItem = ps.Resolution;
-        _fullscreen.IsChecked = ps.Fullscreen;
-        _vsync.IsChecked = ps.Vsync;
-        _skipIntro.IsChecked = ps.SkipIntro;
+        _pQuality.SelectedItem = ps.Quality;
+        _pRes.SelectedItem = ps.Resolution;
+        _pFullscreen.IsChecked = ps.Fullscreen;
+        _pVsync.IsChecked = ps.Vsync;
+        _pSkipIntro.IsChecked = ps.SkipIntro;
         foreach (var kv in _cvKeys)
             kv.Value.Text = ps.Keybinds.TryGetValue(kv.Key, out string? v) ? v : "";
-        _cvContent.Text = Port.ContentStatus();
+        _cvContent.Text = Port.ContentStatusFor(ps);
         _cvSave.Text = Port.SaveStatus(ps);
         _cvStatus.Text = Port.StatusLine(ps);
-        _cvLog.Text = Port.TailLog();
+        _cvLog.Text = Port.TailLog(CollectPort());
+        _loadingPort = false;
     }
 
     private PortSettings CollectPort()
     {
         var s = new PortSettings
         {
-            Backend = _cvBackend.SelectedIndex == 1 ? "pc" : "rex",
-            Quality = _quality.SelectedItem as string ?? "high",
-            Fullscreen = _fullscreen.IsChecked == true,
-            Vsync = _vsync.IsChecked == true,
-            SkipIntro = _skipIntro.IsChecked == true,
+            Backend = "rex",
+            Quality = _pQuality.SelectedItem as string ?? "high",
+            Fullscreen = _pFullscreen.IsChecked == true,
+            Vsync = _pVsync.IsChecked == true,
+            SkipIntro = _pSkipIntro.IsChecked == true,
             StartMode = _cvStart.SelectedIndex switch { 0 => "title", 2 => "game", _ => "menu" },
+            SkipPresses = IntOr(_cvSkipPresses.Text, 2),
+            SkipGap = IntOr(_cvSkipGap.Text, 4),
+            SkipDelay = IntOr(_cvSkipDelay.Text, 14),
             Scale = _cvScale.SelectedIndex > 0 ? _cvScale.SelectedIndex.ToString() : "",
             Aniso = _cvAniso.SelectedIndex > 0 ? (_cvAniso.SelectedIndex - 1).ToString() : "",
             Msaa = _cvMsaa.SelectedIndex switch { 1 => "1", 2 => "0", _ => "" },
             Dither = _cvDither.SelectedIndex switch { 1 => "1", 2 => "0", _ => "" },
+            Fxaa = _cvFxaa.SelectedIndex switch { 1 => "on", 2 => "extreme", 3 => "off", _ => "preset" },
             AsyncShaders = _cvAsync.IsChecked == true ? "1" : "0",
             TextureCacheMb = TexCacheValues[Math.Clamp(_cvTexCache.SelectedIndex, 0, TexCacheValues.Length - 1)],
+            LowMemory = _cvLowMem.IsChecked == true,
+            MnkMode = _cvMnk.IsChecked == true,
+            AudioEnabled = _cvAudioEnable.IsChecked == true ||
+                           _cvAudioMaster.SelectedIndex < AudioVolumes.Length - 1 ||
+                           _cvAudioNight.IsChecked == true,
+            AudioMaster = AudioVolumes[Math.Clamp(_cvAudioMaster.SelectedIndex, 0, AudioVolumes.Length - 1)],
+            AudioMute = _cvAudioMute.IsChecked == true,
+            AudioNight = _cvAudioNight.IsChecked == true,
+            DlcGolden = _cvDlcGolden.IsChecked == true,
+            DlcMegaXel = _cvDlcMegaXel.IsChecked == true,
+            DlcRay = _cvDlcRay.IsChecked == true,
+            DlcRetro = _cvDlcRetro.IsChecked == true,
+            InstallDir = _cvInstallDir.Text?.Trim() ?? "",
+            ReplaceGame = _cvReplace.IsChecked == true,
             LicenseMask = string.IsNullOrWhiteSpace(_cvLicense.Text)
                 ? "4294967295" : _cvLicense.Text!.Trim(),
             UserDataRoot = _cvUserData.Text?.Trim() ?? "",
         };
-        string res = _res.SelectedItem as string ?? "960x540";
+        string res = _pRes.SelectedItem as string ?? "960x540";
         string[] wh = res.Split('x');
         if (wh.Length == 2 && int.TryParse(wh[0], out int w) && int.TryParse(wh[1], out int h))
         {

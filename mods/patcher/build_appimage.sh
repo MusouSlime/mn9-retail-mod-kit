@@ -19,6 +19,11 @@ fi
 rm -rf AppDir
 mkdir -p AppDir/usr/bin
 cp -a dist/linux-x64/. AppDir/usr/bin/
+# Bundle the self-contained ReXGlue runtime used by "Install the port from XBLA".
+if [ -d port-runtime/linux-x64 ]; then
+  mkdir -p AppDir/usr/bin/port-runtime
+  cp -a port-runtime/linux-x64 AppDir/usr/bin/port-runtime/
+fi
 # Bundle the spawn override so "Launch with character" works from the AppImage.
 SPAWN="${SPAWN_DIR:-./spawn_override}"
 if [ ! -d "$SPAWN" ]; then SPAWN="../spawn_override"; fi

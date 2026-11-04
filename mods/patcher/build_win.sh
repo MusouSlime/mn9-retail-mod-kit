@@ -14,6 +14,14 @@ case "$TARGET" in
     "$DOTNET" publish -c Release -r win-x64 --self-contained true \
       -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
       -p:EnableCompressionInSingleFile=true -o dist/win-x64
+    if [ -d port-runtime/win-x64 ]; then
+      mkdir -p dist/win-x64/port-runtime
+      cp -a port-runtime/win-x64 dist/win-x64/port-runtime/
+    fi
+    if command -v zip >/dev/null 2>&1; then
+      rm -f dist/Mn9Patcher-win64.zip
+      (cd dist/win-x64 && zip -qr ../Mn9Patcher-win64.zip .)
+    fi
     echo "built: $(pwd)/dist/win-x64/Mn9Patcher.exe"
     ;;
   linux)

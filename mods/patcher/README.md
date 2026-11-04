@@ -37,6 +37,47 @@ Run `Mn9Patcher.exe` (Windows) or `XelLauncher-x86_64.AppImage` (Linux).
   under `usr/spawn_override/`, so the packaged build works without the
   source tree.
 
+## ReXGlue port
+
+The launcher has two top-level pages, **Port** and **Steam**. Both use the
+same sub-tabs: **Setup**, **Display**, **Quality**, **Audio**, **Gameplay**,
+**Character**, **Saves** and **Advanced**, so the same workflow applies to
+either backend.
+
+The **Port** page can build a self-contained Xbox 360 port from the user's own
+XBLA package:
+
+1. Pick the XBLA package file (or an already-extracted `default.xex` folder).
+2. Optionally add DLC/addon packages.
+3. Pick an install folder and press **Extract && install port**.
+
+The launcher extracts the STFS package with the bundled `extract_stfs`, copies
+the bundled ReXGlue runtime, installs addons into
+`game/Content/.../584114A4/00000002`, and writes `port.conf` with
+`license_mask=4294967295` so the build is fully unlocked. The runtime payloads
+live in `port-runtime/linux-x64` and `port-runtime/win-x64`; the AppImage and
+Windows build copy the matching one next to the launcher. No game data or
+runtime is bundled inside the installer itself.
+
+The Port page also covers display, quality preset and fine overrides, FXAA,
+low-memory mode, keyboard-as-pad, intro skip timing, port audio gain/mute/night
+mode, addon/DLC staging, saves, shader cache, logs and keybindings. Intro skip
+works for managed ports on Linux (xdotool) and Windows (Win32 key events).
+
+The Steam page contains the retail PC build's display, effects, audio,
+gameplay, character/palette, save-backup and advanced options. The global
+Game box and Apply/Launch bar stay available above/below both pages.
+
+The four known addon packs (Golden Beck, MegaXel, Ray, Retro Hero) are staged
+into the port's content folder; select the form in the game's character/Extra
+menu. The launcher does not force Beck's controller onto those packs.
+
+PC-only settings remain on the PC tabs: per-effect rendering toggles, custom
+post styles, per-bus audio/pitch/dialog shuffle/music replacement, cutscene
+auto-skip/disable-dialog, the boss-palette shim, and the UE3 frame cap/texture
+pool/physics options. They depend on PC UE3, OpenGL or OpenAL and are labelled
+as PC-only on the Port tab.
+
 ## Look and feel
 
 The launcher uses assets extracted from the retail game:

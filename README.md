@@ -8,15 +8,21 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
-## Xel Launcher 1.0.5
+## Xel Launcher 1.3.0
 
-The first stable release of the cross-platform launcher, built around the
-retail PC build and the ReXGlue Xbox 360 port.
+Two top-level pages — **Port** and **Steam** — with the same sub-tabs
+(Setup, Display, Quality, Audio, Gameplay, Character, Saves, Advanced).
+Both platforms are supported, including a Windows ReXGlue runtime.
 
-- **PC patcher** — resolution, frame cap, texture pool, physics substeps,
-  effects, Large Address Aware, config locking and restore.
-- **Port tab (Linux)** — ReXGlue backend, quality presets, start mode,
-  DLC/license mask, user-data root, diagnostics and keyboard binds.
+- **Port page** — install a self-contained Xbox 360 port from the user's
+  XBLA package (and optional DLC/addons). The launcher extracts STFS with the
+  bundled tool, copies the bundled runtime, stages addons and writes
+  `license_mask=4294967295` so the build is fully unlocked.
+- **Steam page** — the retail PC patcher: resolution, frame cap, texture
+  pool, physics substeps, effects, turbo auto-fire, Large Address Aware,
+  config locking and restore.
+- **DLC/addons** — Golden Beck, MegaXel, Ray and Retro Hero are staged into
+  the port's content folder; pick the form in game.
 - **Post-process** — Metallic (default), Noir, Dot Matrix, Cinematic,
   Posterize and Retro, plus FXAA. Applied from the first frame.
 - **Audio** — replace the soundtrack from a folder (random/playlist/shuffle),
