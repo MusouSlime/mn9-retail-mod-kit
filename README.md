@@ -8,7 +8,7 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
-## Xel Launcher 1.3.0
+## Xel Launcher 1.4.0
 
 Two top-level pages — **Port** and **Steam** — with the same sub-tabs
 (Setup, Display, Quality, Audio, Gameplay, Character, Saves, Advanced).
@@ -34,6 +34,10 @@ Both platforms are supported, including a Windows ReXGlue runtime.
 - **Character select** — Beck, Call, Ray, Gold and Retro via a spawn override
   (Linux).
 - **Saves** — timestamped backups, manifests, restore and safe mode.
+- **Fast boot** — one A at the title reaches the main menu; the controller was
+  verified on the released build.
+- **Texture detail (port)** — native, low (skip the largest mip) or very low
+  (skip two), without repacking the game data.
 
 Release binaries bundle launcher interface art extracted from the retail game
 for the header/turntables. That art is not part of the MIT-licensed source and
