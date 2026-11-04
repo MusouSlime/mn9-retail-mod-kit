@@ -9,17 +9,19 @@ namespace Mn9Patcher;
 /// </summary>
 internal static class IntroSkipper
 {
-    public static async Task RunAsync(Process process, PortSettings s)
+    public static async Task RunAsync(Process process, PortSettings s, int? pressesOverride = null,
+                                      int? delayOverride = null)
     {
         try
         {
-            if (s.SkipPresses <= 0) return;
+            int presses = Math.Clamp(pressesOverride ?? s.SkipPresses, 0, 20);
+            if (presses <= 0) return;
             IntPtr hwnd = OperatingSystem.IsWindows()
                 ? await WaitForWindowsWindowAsync(process, TimeSpan.FromSeconds(60))
                 : IntPtr.Zero;
 
-            await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(s.SkipDelay, 0, 120)));
-            for (int i = 0; i < Math.Clamp(s.SkipPresses, 0, 20); i++)
+            await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(delayOverride ?? s.SkipDelay, 0, 120)));
+            for (int i = 0; i < presses; i++)
             {
                 if (OperatingSystem.IsWindows())
                 {
@@ -41,8 +43,11 @@ internal static class IntroSkipper
 
     private static void PressLinux(int pid)
     {
+        // xdotool 4.x on some distros rejects --sync after windowactivate.
+        // Try the plain forms first, then the focus fallback.
+        if (Tool("xdotool", $"search --pid {pid} windowactivate key space")) return;
+        if (Tool("xdotool", $"search --pid {pid} windowfocus key space")) return;
         if (Tool("xdotool", $"search --pid {pid} windowactivate --sync key space")) return;
-        if (Tool("xdotool", $"search --pid {pid} windowfocus --sync key space")) return;
     }
 
     private static bool Tool(string exe, string args)

@@ -59,6 +59,12 @@ public sealed class MainWindow : Window
         ItemsSource = Port.Qualities,
         SelectedIndex = 1,
     };
+    private readonly ComboBox _pFps = new()
+    {
+        Width = 170,
+        ItemsSource = new[] { "60 FPS (smooth)", "30 FPS (low power)" },
+        SelectedIndex = 0,
+    };
     private readonly CheckBox _pFullscreen = new() { Content = "Fullscreen" };
     private readonly CheckBox _pVsync = new() { Content = "VSync" };
     private readonly CheckBox _pSkipIntro = new() { Content = "Skip intro screens", IsChecked = true };
@@ -97,6 +103,12 @@ public sealed class MainWindow : Window
     private readonly TextBox _cvSkipPresses = new() { Width = 70, Text = "2" };
     private readonly TextBox _cvSkipGap = new() { Width = 70, Text = "4" };
     private readonly TextBox _cvSkipDelay = new() { Width = 70, Text = "14" };
+    private readonly ComboBox _cvBoot = new()
+    {
+        Width = 190,
+        ItemsSource = new[] { "Fast (BootGame)", "Normal boot", "Title menu", "Stage select" },
+        SelectedIndex = 0,
+    };
     private static readonly int[] AudioVolumes = { 0, 25, 50, 75, 100 };
     private readonly ComboBox _cvAudioMaster = new()
     {
@@ -138,6 +150,17 @@ public sealed class MainWindow : Window
             "1024 MB — very high",
             "2048 MB — extreme",
             "4096 MB — maximum",
+        },
+        SelectedIndex = 0,
+    };
+    private readonly ComboBox _cvTexDetail = new()
+    {
+        Width = 230,
+        ItemsSource = new[]
+        {
+            "Native (full texture set)",
+            "Low (skip largest mip)",
+            "Very low (skip two mips)",
         },
         SelectedIndex = 0,
     };
@@ -366,7 +389,7 @@ public sealed class MainWindow : Window
         _res.ItemsSource = ResolutionPresets;
         _res.SelectedIndex = 8;   // 1920x1080 — avoids shrinking the game by default
         _pRes.ItemsSource = ResolutionPresets;
-        _pRes.SelectedIndex = 1;  // 960x540 — low-memory port default
+        _pRes.SelectedIndex = 3;  // 1280x720 — native 360 resolution
 
         _character.ItemsSource = Patcher.CharacterNames;
         _character.SelectedIndex = 0;
@@ -508,7 +531,8 @@ public sealed class MainWindow : Window
 
         Tip(_res, "Render resolution written to the port and the PC INIs.");
         Tip(_pQuality, "Port image quality: max = 2x supersampling (heavy), high = native 8x anisotropy + MSAA (smooth), balanced/performance = lighter.");
-        Tip(_pSkipIntro, "Focus the port window and send A to skip the title screen, first-run dialog and opening story slides.");
+        Tip(_pFps, "Port frame rate. 60 FPS sets the guest vblank mode to 120 Hz so the game's two-vblank wait lands at 60 FPS; 30 FPS lowers CPU use.");
+        Tip(_pSkipIntro, "Focus the port window and send A to skip the title screen. Fast boot sends one A (title only); other boot modes use the Skip presses count for the first-run dialog and story slides.");
         Tip(_pRes, "Port render resolution written to the ReXGlue config.");
         Tip(_pFullscreen, "Run the port fullscreen instead of a window.");
         Tip(_pVsync, "Synchronize the port to the display refresh rate.");
@@ -527,6 +551,7 @@ public sealed class MainWindow : Window
         Tip(_cvDlcRay, "Stage the Ray Expansion addon (DLC). Ray keeps his own moveset.");
         Tip(_cvDlcRetro, "Stage the Retro Hero addon (DLC).");
         Tip(_cvTexCache, "Soft texture-cache cap. The runtime doubles it for the hard cap: 64 MB minimum, 4096 MB maximum (hard 8192 MB). Values outside that range are rejected; Auto keeps the low-memory 128/256 MB defaults.");
+        Tip(_cvTexDetail, "Port-only texture LOD pack. Low skips the largest mip level (about 75% less texture memory per large texture); Very low skips two. This is a runtime low-res pack and does not modify game data.");
         Tip(_fps, "Frame cap written to MaxSmoothedFrameRate. 62 is the physics-safe default; higher values can change movement and pacing.");
         Tip(_pool, "Texture streaming pool in MB (PoolSize). Higher keeps more textures resident; lower saves VRAM.");
         Tip(_physics, "Physics substeps per frame (MaxPhysicsSubsteps). 5 is the game default; higher is more stable but slower.");
@@ -585,6 +610,7 @@ public sealed class MainWindow : Window
 
         var portDisplay = Section("Display & launch",
             Row("Resolution", _pRes, "Quality preset", _pQuality),
+            Row("Frame rate", _pFps, "Boot mode", _cvBoot),
             CheckList(_pFullscreen, _pVsync, _pSkipIntro),
             Row("Start at", _cvStart, "License mask", _cvLicense),
             Row("Skip presses", _cvSkipPresses, "Skip gap (s)", _cvSkipGap),
@@ -1648,6 +1674,7 @@ public sealed class MainWindow : Window
             Row("MSAA", _cvMsaa, "Dither", _cvDither),
             SimpleRow("FXAA (port)", _cvFxaa),
             SimpleRow("Texture cache (soft cap)", _cvTexCache),
+            SimpleRow("Texture detail (port)", _cvTexDetail),
             _cvAsync);
 
         var contentRefresh = new Button { Content = "Refresh" };
@@ -1890,10 +1917,13 @@ public sealed class MainWindow : Window
             : "No managed port installed yet; Launch port uses the dev hybrid if available.";
         int texIdx = Array.IndexOf(TexCacheValues, ps.TextureCacheMb);
         _cvTexCache.SelectedIndex = texIdx >= 0 ? texIdx : 0;
+        _cvTexDetail.SelectedIndex = Math.Clamp(ps.TextureMipSkip, 0, 2);
         _cvStart.SelectedIndex = ps.StartMode switch { "title" => 0, "game" => 2, _ => 1 };
+        _cvBoot.SelectedIndex = ps.BootMode switch { "normal" => 1, "title" => 2, "stage" => 3, _ => 0 };
         _cvLicense.Text = ps.LicenseMask;
         _cvUserData.Text = ps.UserDataRoot;
         _pQuality.SelectedItem = ps.Quality;
+        _pFps.SelectedIndex = ps.GameHz == 60 ? 1 : 0;
         _pRes.SelectedItem = ps.Resolution;
         _pFullscreen.IsChecked = ps.Fullscreen;
         _pVsync.IsChecked = ps.Vsync;
@@ -1913,10 +1943,12 @@ public sealed class MainWindow : Window
         {
             Backend = "rex",
             Quality = _pQuality.SelectedItem as string ?? "high",
+            GameHz = _pFps.SelectedIndex == 1 ? 60 : 120,
             Fullscreen = _pFullscreen.IsChecked == true,
             Vsync = _pVsync.IsChecked == true,
             SkipIntro = _pSkipIntro.IsChecked == true,
             StartMode = _cvStart.SelectedIndex switch { 0 => "title", 2 => "game", _ => "menu" },
+            BootMode = _cvBoot.SelectedIndex switch { 1 => "normal", 2 => "title", 3 => "stage", _ => "fast" },
             SkipPresses = IntOr(_cvSkipPresses.Text, 2),
             SkipGap = IntOr(_cvSkipGap.Text, 4),
             SkipDelay = IntOr(_cvSkipDelay.Text, 14),
@@ -1927,6 +1959,7 @@ public sealed class MainWindow : Window
             Fxaa = _cvFxaa.SelectedIndex switch { 1 => "on", 2 => "extreme", 3 => "off", _ => "preset" },
             AsyncShaders = _cvAsync.IsChecked == true ? "1" : "0",
             TextureCacheMb = TexCacheValues[Math.Clamp(_cvTexCache.SelectedIndex, 0, TexCacheValues.Length - 1)],
+            TextureMipSkip = Math.Clamp(_cvTexDetail.SelectedIndex, 0, 2),
             LowMemory = _cvLowMem.IsChecked == true,
             MnkMode = _cvMnk.IsChecked == true,
             AudioEnabled = _cvAudioEnable.IsChecked == true ||

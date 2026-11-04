@@ -8,12 +8,14 @@ public sealed class PortSettings
 {
     public string Backend = "rex";          // rex | pc
     public string Quality = "high";         // max | high | balanced | performance
-    public int Width = 960;
-    public int Height = 540;
+    public int GameHz = 120;                // 120 = 60 FPS, 60 = 30 FPS low-power
+    public int Width = 1280;
+    public int Height = 720;
     public bool Fullscreen;
     public bool Vsync;
     public bool SkipIntro = true;
     public string StartMode = "menu";       // title | menu | game
+    public string BootMode = "fast";        // fast | normal | title | stage
     public int SkipPresses = 2;
     public int SkipGap = 4;
     public int SkipDelay = 14;
@@ -26,6 +28,7 @@ public sealed class PortSettings
     public string Fxaa = "preset";          // preset | on | extreme | off
     public string AsyncShaders = "0";       // 0 = synchronous (valid frames)
     public int TextureCacheMb;              // 0 = runtime default
+    public int TextureMipSkip;              // 0 = native, 1-3 = lower-resolution textures
     public bool LowMemory = true;           // 960x540 + reduced caches
     public bool MnkMode = true;             // keyboard as Xbox pad
 
@@ -116,6 +119,17 @@ public static class Port
         }
     }
 
+    public static string RegistryPath
+    {
+        get
+        {
+            string dir = IsWindows
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "xel-launcher")
+                : Path.Combine(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") ?? Path.Combine(Home(), ".config"), "xel-launcher");
+            return Path.Combine(dir, "last-port.txt");
+        }
+    }
+
     public static string DefaultUserDataRoot => Path.Combine(RecompDir, "userdata");
     public static string GameRoot => Path.Combine(RecompDir, "game");
     public static string ContentRoot =>
@@ -170,16 +184,142 @@ public static class Port
     public static string ManagedAddonCacheFor(PortSettings s) =>
         Path.Combine(ManagedRootFor(s), "addons");
 
-    public static string ManagedRuntimeExeFor(PortSettings s) =>
-        Path.Combine(ManagedRootFor(s), RuntimeExeName);
+    public static string ManagedRuntimeExeFor(PortSettings s)
+    {
+        string root = ManagedRootFor(s);
+        string direct = Path.Combine(root, RuntimeExeName);
+        if (File.Exists(direct)) return direct;
+        string build = Path.Combine(root, "out", "build",
+            IsWindows ? "win-amd64-release" : "linux-amd64-release", RuntimeExeName);
+        return File.Exists(build) ? build : direct;
+    }
 
     public static bool ManagedGamePresent(PortSettings s) =>
         File.Exists(Path.Combine(ManagedGameDirFor(s), "default.xex"));
 
-    public static bool ManagedReady(PortSettings s) =>
-        ManagedGamePresent(s) && File.Exists(ManagedRuntimeExeFor(s));
+    private static bool DevPortAt(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return false;
+        if (!File.Exists(Path.Combine(root, "game", "default.xex"))) return false;
+        string build = Path.Combine(root, "out", "build",
+            IsWindows ? "win-amd64-release" : "linux-amd64-release", RuntimeExeName);
+        return File.Exists(Path.Combine(root, "run-mn9.sh")) ||
+               File.Exists(Path.Combine(root, "run-mn9.bat")) ||
+               File.Exists(Path.Combine(root, "run-mn9.ps1")) ||
+               File.Exists(build);
+    }
 
-    public static bool UseManaged(PortSettings s) => s.Managed || ManagedReady(s);
+    public static bool ManagedReady(PortSettings s) =>
+        ManagedGamePresent(s) &&
+        (File.Exists(ManagedRuntimeExeFor(s)) || DevPortAt(ManagedRootFor(s)));
+
+    public static bool UseManaged(PortSettings s) =>
+        ManagedReady(s) || (s.Managed && ManagedGamePresent(s));
+
+    private static bool ManagedInstallAt(string root) =>
+        !string.IsNullOrWhiteSpace(root) &&
+        File.Exists(Path.Combine(root, "game", "default.xex")) &&
+        (File.Exists(Path.Combine(root, "port.conf")) || DevPortAt(root));
+
+    private static string? ReadRegistryPath()
+    {
+        try
+        {
+            if (!File.Exists(RegistryPath)) return null;
+            string path = File.ReadAllText(RegistryPath).Trim();
+            return path.Length > 0 ? path : null;
+        }
+        catch { return null; }
+    }
+
+    public static void RememberManagedRoot(string root)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(RegistryPath)!);
+            File.WriteAllText(RegistryPath, root + Environment.NewLine);
+        }
+        catch { }
+    }
+
+    /// <summary>Find an installed port even if the configured/typed folder was
+    /// changed or the folder was moved. The typed folder wins when valid; then
+    /// the saved registry, the default, and common install roots are checked.</summary>
+    public static string? DiscoverManagedRoot(PortSettings s)
+    {
+        var candidates = new List<string>();
+        void Add(string? p)
+        {
+            if (!string.IsNullOrWhiteSpace(p)) candidates.Add(p!.Trim());
+        }
+        Add(s.InstallDir);
+        Add(Environment.GetEnvironmentVariable("MN9_PORT_DIR"));
+        Add(ReadRegistryPath());
+        Add(DefaultManagedRoot);
+        Add(Path.Combine(Home(), "mn9-rexglue"));
+        Add(Path.Combine(Home(), "Games", "mn9-rexglue"));
+        Add(Path.Combine(Home(), "Projects", "mn9-rexglue"));
+        if (!string.IsNullOrWhiteSpace(s.InstallDir))
+        {
+            string? parent = Path.GetDirectoryName(s.InstallDir.Trim());
+            if (!string.IsNullOrWhiteSpace(parent))
+                Add(Path.Combine(parent!, "mn9-rexglue"));
+        }
+
+        foreach (string c in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            if (ManagedInstallAt(c)) return c;
+
+        // Last resort: shallow scan of likely roots for a moved port.
+        string[] bases =
+        {
+            Path.Combine(Home(), "Games"),
+            Path.Combine(Home(), "Projects"),
+            Path.Combine(Home(), "Desktop"),
+            Path.Combine(Home(), "Documents"),
+            Path.Combine(Home(), ".local", "share"),
+        };
+        foreach (string b in bases)
+        {
+            if (!Directory.Exists(b)) continue;
+            string? hit = ScanForManaged(b, 3);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    private static string? ScanForManaged(string dir, int depth)
+    {
+        if (depth < 0) return null;
+        try
+        {
+            if (ManagedInstallAt(dir)) return dir;
+            foreach (string sub in Directory.GetDirectories(dir))
+            {
+                string name = Path.GetFileName(sub);
+                if (name.StartsWith(".", StringComparison.Ordinal) ||
+                    name.Equals("Steam", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string? hit = ScanForManaged(sub, depth - 1);
+                if (hit != null) return hit;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>Resolve the port path before launch/apply. If the user typed a
+    /// different folder, keep it when it is a real install; otherwise use the
+    /// discovered one.</summary>
+    public static bool ResolveManagedRoot(PortSettings s)
+    {
+        string? found = DiscoverManagedRoot(s);
+        if (found == null) return false;
+        if (!string.Equals(found, s.InstallDir, StringComparison.OrdinalIgnoreCase))
+            s.InstallDir = found;
+        s.Managed = true;
+        return true;
+    }
 
     public static string ContentDirFor(PortSettings s)
     {
@@ -196,7 +336,11 @@ public static class Port
         ManagedReady(Read()) ||
         (!IsWindows && File.Exists(HybridBin) && File.Exists(Path.Combine(RecompDir, "run-mn9.sh")));
 
-    public static bool HasConfig(PortSettings s) => UseManaged(s) || File.Exists(ConfPath);
+    public static bool HasConfig(PortSettings s)
+    {
+        if (ResolveManagedRoot(s)) return true;
+        return File.Exists(ConfPath);
+    }
 
     public static bool IsRunning() =>
         Process.GetProcessesByName("mn9").Length > 0;
@@ -224,16 +368,14 @@ public static class Port
 
         string root = string.IsNullOrWhiteSpace(s.InstallDir) ? DefaultManagedRoot : s.InstallDir.Trim();
         s.InstallDir = root;
-        string managedConf = Path.Combine(root, "port.conf");
-        if (File.Exists(managedConf))
+        string? found = DiscoverManagedRoot(s);
+        if (found != null)
         {
-            ReadInto(s, managedConf);
+            s.InstallDir = found;
+            string managedConf = Path.Combine(found, "port.conf");
+            if (File.Exists(managedConf)) ReadInto(s, managedConf);
             s.Managed = true;
-            s.InstallDir = root;
-        }
-        else if (ManagedReady(s))
-        {
-            s.Managed = true;
+            s.InstallDir = found;
         }
         return s;
     }
@@ -251,10 +393,12 @@ public static class Port
             {
                 case "backend" when value.Length > 0: s.Backend = value; break;
                 case "quality" when value.Length > 0: s.Quality = value; break;
+                case "game_hz" when int.TryParse(value, out int hz): s.GameHz = hz == 60 ? 60 : 120; break;
                 case "fullscreen": s.Fullscreen = value != "0"; break;
                 case "vsync": s.Vsync = value != "0"; break;
                 case "skip_intro": s.SkipIntro = value != "0"; break;
                 case "start_mode" when value.Length > 0: s.StartMode = value; break;
+                case "boot_mode" when value.Length > 0: s.BootMode = value; break;
                 case "skip_presses" when int.TryParse(value, out int presses): s.SkipPresses = presses; break;
                 case "skip_gap" when int.TryParse(value, out int gap): s.SkipGap = gap; break;
                 case "skip_delay" when int.TryParse(value, out int delay): s.SkipDelay = delay; break;
@@ -265,6 +409,7 @@ public static class Port
                 case "fxaa" when value.Length > 0: s.Fxaa = value; break;
                 case "async_shaders": s.AsyncShaders = value.Length > 0 ? value : "0"; break;
                 case "texture_cache_mb" when int.TryParse(value, out int mb): s.TextureCacheMb = mb; break;
+                case "texture_mip_skip" when int.TryParse(value, out int skip): s.TextureMipSkip = Math.Clamp(skip, 0, 3); break;
                 case "lowmem": s.LowMemory = value != "0"; break;
                 case "mnk_mode": s.MnkMode = value != "0"; break;
                 case "audio_enabled": s.AudioEnabled = value != "0"; break;
@@ -299,6 +444,7 @@ public static class Port
     /// and any keys the launcher does not manage.</summary>
     public static string Apply(PortSettings s)
     {
+        if (!ManagedInstallAt(ManagedRootFor(s))) ResolveManagedRoot(s);
         bool managed = UseManaged(s);
         string path = managed ? ManagedConfPathFor(s) : ConfPath;
         if (!managed && !File.Exists(path))
@@ -316,7 +462,9 @@ public static class Port
             ["skip_gap"] = Math.Clamp(s.SkipGap, 1, 30).ToString(),
             ["skip_delay"] = Math.Clamp(s.SkipDelay, 0, 120).ToString(),
             ["start_mode"] = s.StartMode,
+            ["boot_mode"] = s.BootMode,
             ["quality"] = s.Quality,
+            ["game_hz"] = s.GameHz == 60 ? "60" : "120",
             ["scale_override"] = s.Scale,
             ["aniso_override"] = s.Aniso,
             ["msaa"] = s.Msaa,
@@ -324,6 +472,7 @@ public static class Port
             ["fxaa"] = string.IsNullOrWhiteSpace(s.Fxaa) ? "preset" : s.Fxaa,
             ["async_shaders"] = s.AsyncShaders,
             ["texture_cache_mb"] = s.TextureCacheMb.ToString(),
+            ["texture_mip_skip"] = Math.Clamp(s.TextureMipSkip, 0, 3).ToString(),
             ["lowmem"] = s.LowMemory ? "1" : "0",
             ["mnk_mode"] = s.MnkMode ? "1" : "0",
             ["audio_enabled"] = s.AudioEnabled ? "1" : "0",
@@ -361,6 +510,7 @@ public static class Port
                 lines.Add($"{kv.Key}={kv.Value}");
 
         File.WriteAllLines(path, lines);
+        if (managed) RememberManagedRoot(ManagedRootFor(s));
         string content = s.Backend == "pc" ? "" : ApplyContent(s);
         return $"Port settings written: {s.Quality}, {s.Resolution}, " +
                $"{(s.Fullscreen ? "fullscreen" : "windowed")}, " +
@@ -372,6 +522,7 @@ public static class Port
         if (s.Backend == "pc")
             return LaunchPc();
 
+        ResolveManagedRoot(s);
         if (UseManaged(s))
             return LaunchManaged(s);
         if (IsWindows)
@@ -460,8 +611,30 @@ public static class Port
             psi.ArgumentList.Add(s.Width.ToString());
             psi.ArgumentList.Add("--window_height");
             psi.ArgumentList.Add(s.Height.ToString());
+            switch (s.BootMode)
+            {
+                case "normal":
+                    break;
+                case "title":
+                    psi.ArgumentList.Add("--cl");
+                    psi.ArgumentList.Add("TitleMenu");
+                    break;
+                case "stage":
+                    psi.ArgumentList.Add("--cl");
+                    psi.ArgumentList.Add("Map_StageSelect");
+                    break;
+                default:
+                    psi.ArgumentList.Add("--cl");
+                    psi.ArgumentList.Add("BootGame -novideo");
+                    break;
+            }
             if (s.Fullscreen) psi.ArgumentList.Add("--fullscreen");
-            if (s.MnkMode) psi.ArgumentList.Add("--mnk_mode");
+            else psi.ArgumentList.Add("--no-fullscreen");
+            if (s.MnkMode)
+            {
+                psi.ArgumentList.Add("--mnk_mode");
+                psi.ArgumentList.Add("true");
+            }
             psi.ArgumentList.Add("--log_file");
             psi.ArgumentList.Add(Path.Combine(logs, "mn9_managed.log"));
 
@@ -472,7 +645,9 @@ public static class Port
             psi.Environment["MN9_START_MODE"] = s.StartMode;
             psi.Environment["MN9_ASYNC"] = s.AsyncShaders;
             psi.Environment["MN9_TEXCACHE"] = s.TextureCacheMb.ToString();
+            psi.Environment["MN9_TEXSKIP"] = Math.Clamp(s.TextureMipSkip, 0, 3).ToString();
             psi.Environment["MN9_LOWMEM"] = s.LowMemory ? "1" : "0";
+            psi.Environment["MN9_GAME_HZ"] = s.GameHz == 60 ? "60" : "120";
             psi.Environment["MN9_FXAA"] = s.Fxaa;
             psi.Environment["MN9_AUDIO_ENABLED"] = s.AudioEnabled ? "1" : "0";
             psi.Environment["MN9_AUDIO_MASTER"] = s.AudioMaster.ToString();
@@ -488,12 +663,24 @@ public static class Port
             if (!IsWindows)
             {
                 string old = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH") ?? "";
-                psi.Environment["LD_LIBRARY_PATH"] = root + (old.Length > 0 ? ":" + old : "");
+                string libs = root;
+                string sdk = Path.Combine(Home(), ".local", "rexglue-sdk-0.10.0", "lib");
+                if (DevPortAt(root) && Directory.Exists(sdk)) libs = sdk + ":" + root;
+                psi.Environment["LD_LIBRARY_PATH"] = libs + (old.Length > 0 ? ":" + old : "");
+                psi.Environment["SDL_VIDEODRIVER"] = "x11";
             }
 
             Process? proc = Process.Start(psi);
+            // Fast BootGame startup skips the boot movie but still stops at the
+            // title screen. Send a single A press there to open the main menu;
+            // the extra presses used by the other boot modes can advance story
+            // slides, so they stay opt-in.
             if (proc != null && s.SkipIntro)
-                _ = Task.Run(() => IntroSkipper.RunAsync(proc, s));
+            {
+                bool fast = s.BootMode == "fast";
+                _ = Task.Run(() => IntroSkipper.RunAsync(
+                    proc, s, fast ? 1 : s.SkipPresses, fast ? Math.Max(s.SkipDelay, 18) : s.SkipDelay));
+            }
         }
         catch (Exception ex)
         {
@@ -644,6 +831,7 @@ public static class Port
             s.Backend = "rex";
             s.LicenseMask = "4294967295";
             string applied = Apply(s);
+            RememberManagedRoot(root);
 
             long bytes = DirectorySize(gameDir);
             return $"Port installed at {root}. Game data {FormatSize(bytes)}, " +

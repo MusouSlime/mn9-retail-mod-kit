@@ -51,6 +51,17 @@ XBLA package:
 2. Optionally add DLC/addon packages.
 3. Pick an install folder and press **Extract && install port**.
 
+The launcher remembers the real managed-port location in
+`~/.config/xel-launcher/last-port.txt` (Windows:
+`%APPDATA%\xel-launcher\last-port.txt`). If the install-folder field is
+changed to an empty or moved path, launch/apply falls back to the remembered
+port and then scans common install roots for a valid `port.conf` +
+`game/default.xex`.
+
+A development port is also recognized without `port.conf` when it contains
+`game/default.xex` plus `run-mn9.sh`, `run-mn9.ps1`, or the built
+`out/build/<platform>/mn9` executable. The Windows helper is `run-mn9.ps1`.
+
 The launcher extracts the STFS package with the bundled `extract_stfs`, copies
 the bundled ReXGlue runtime, installs addons into
 `game/Content/.../584114A4/00000002`, and writes `port.conf` with
@@ -59,9 +70,10 @@ live in `port-runtime/linux-x64` and `port-runtime/win-x64`; the AppImage and
 Windows build copy the matching one next to the launcher. No game data or
 runtime is bundled inside the installer itself.
 
-The Port page also covers display, quality preset and fine overrides, FXAA,
-low-memory mode, keyboard-as-pad, intro skip timing, port audio gain/mute/night
-mode, addon/DLC staging, saves, shader cache, logs and keybindings. Intro skip
+The Port page also covers display, quality preset and fine overrides, frame rate
+(60 FPS default, or 30 FPS low-power), FXAA, low-memory mode, keyboard-as-pad,
+intro skip timing, port audio gain/mute/night mode, addon/DLC staging, saves,
+shader cache, logs and keybindings. Intro skip
 works for managed ports on Linux (xdotool) and Windows (Win32 key events).
 
 The Steam page contains the retail PC build's display, effects, audio,
