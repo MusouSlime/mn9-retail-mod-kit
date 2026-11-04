@@ -13,6 +13,7 @@ mkdir -p spawn_override
 
 # OpenAL music/SFX shim.
 "$CC" -O2 -shared -fPIC audiofx/audiofx.c -o spawn_override/libaudiofx.so -ldl -lm
+"$CC" -O2 -shared -fPIC skins/palette.c -o spawn_override/libmn9palette.so -ldl
 
 # Fast-forward shim (scales AWorldInfo::TimeDilation).
 "$CC" -O2 -shared -fPIC turbo/turbo.c -o spawn_override/libmn9turbo.so -ldl

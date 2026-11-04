@@ -26,6 +26,7 @@ mkdir -p AppDir/usr/spawn_override
 cp "$SPAWN/mn9-charselect.sh" "$SPAWN/libmn9spawn.so" AppDir/usr/spawn_override/
 if [ -f "$SPAWN/libpostfx.so" ]; then cp "$SPAWN/libpostfx.so" AppDir/usr/spawn_override/; fi
 if [ -f "$SPAWN/libaudiofx.so" ]; then cp "$SPAWN/libaudiofx.so" AppDir/usr/spawn_override/; fi
+if [ -f "$SPAWN/libmn9palette.so" ]; then cp "$SPAWN/libmn9palette.so" AppDir/usr/spawn_override/; fi
 if [ -f "$SPAWN/libmn9turbo.so" ]; then cp "$SPAWN/libmn9turbo.so" AppDir/usr/spawn_override/; fi
 chmod +x AppDir/usr/spawn_override/mn9-charselect.sh
 cp appimage/AppRun AppDir/AppRun

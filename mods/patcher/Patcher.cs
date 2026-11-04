@@ -963,6 +963,11 @@ if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
   export MN9_TURBO_PAD="${tpad:--1}"
   export MN9_TURBO_KEY="$tkey"
 fi
+PAL="$GAME/.mn9charsel/libmn9palette.so"
+if [ -f "$PAL" ]; then
+  ln -sf "$PAL" "$RUNTIME/libmn9palette.so"
+  PRELOAD="$PRELOAD:$RUNTIME/libmn9palette.so"
+fi
 # Keep Steam's overlay first so Steam Input and the overlay keep working.
 if [ -n "${LD_PRELOAD:-}" ]; then
   export LD_PRELOAD="$LD_PRELOAD:$PRELOAD"
@@ -1094,6 +1099,9 @@ fi
         string afx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libaudiofx.so");
         if (File.Exists(afx))
             InstallFile(afx, Path.Combine(destDir, "libaudiofx.so"));
+        string pal = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9palette.so");
+        if (File.Exists(pal))
+            InstallFile(pal, Path.Combine(destDir, "libmn9palette.so"));
         string tlib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9turbo.so");
         if (File.Exists(tlib))
             File.Copy(tlib, Path.Combine(destDir, "libmn9turbo.so"), true);

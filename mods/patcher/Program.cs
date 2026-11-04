@@ -60,6 +60,7 @@ public sealed class MainWindow : Window
     };
     private readonly CheckBox _skipIntro = new() { Content = "Skip intro screens (port)", IsChecked = true };
     private readonly ComboBox _character = new() { Width = 180 };
+    private readonly ComboBox _palette = new() { Width = 230 };
 
     // ReXGlue port controls
     private readonly ComboBox _cvBackend = new()
@@ -312,8 +313,8 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = Environment.Is64BitProcess
-            ? "Xel Launcher 1.1.0 — Mighty No. 9 (64-bit)"
-            : "Xel Launcher 1.1.0 — Mighty No. 9 (32-bit)";
+            ? "Xel Launcher 1.2.0 — Mighty No. 9 (64-bit)"
+            : "Xel Launcher 1.2.0 — Mighty No. 9 (32-bit)";
         Width = 980;
         Height = 740;
         MinWidth = 760;
@@ -339,6 +340,8 @@ public sealed class MainWindow : Window
 
         _character.ItemsSource = Patcher.CharacterNames;
         _character.SelectedIndex = 0;
+        _palette.ItemsSource = PaletteSettings.Names;
+        _palette.SelectedIndex = 0;
 
         var browse = new Button { Content = "Browse..." };
         browse.Click += async (_, _) => await Browse();
@@ -378,6 +381,8 @@ public sealed class MainWindow : Window
         launchSteam.Click += (_, _) =>
         {
             SaveAudio(installMods: false);
+            string? steamDir = CurrentDir();
+            if (steamDir != null) SavePalette(steamDir);
             _status.Text = "Launching the PC build through Steam...";
             string msg = Port.LaunchPc();
             _status.Text = msg;
@@ -391,6 +396,7 @@ public sealed class MainWindow : Window
             string dir = CurrentDir();
             if (dir == null) return;
             SaveOptions(dir);
+            SavePalette(dir);
             string setMessage = Patcher.SetCharacter(dir, SelectedCharacter());
             _status.Text = setMessage + " " + Patcher.InstallModFiles(dir);
         };
@@ -402,6 +408,7 @@ public sealed class MainWindow : Window
             if (dir == null) return;
             SaveAudio(installMods: false);
             SaveOptions(dir);
+            SavePalette(dir);
             _status.Text = "Launching...";
             string msg = Patcher.LaunchCharacter(dir, SelectedCharacter());
             _status.Text = msg;
@@ -641,6 +648,14 @@ public sealed class MainWindow : Window
                         launchChar,
                     },
                 },
+                SimpleRow("Palette", _palette),
+                new TextBlock
+                {
+                    Text = "Boss palette uses the Mighty Numbers' exact body/head/eye/cheek/mouth materials. It applies to regular Beck; Gold/Retro/Call/Ray keep their own colors.",
+                    Foreground = Brushes.Gray,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 12,
+                },
                 _characterNote,
             },
         };
@@ -729,6 +744,7 @@ public sealed class MainWindow : Window
             string map = testStage.SelectedItem as string ?? "";
             if (string.IsNullOrEmpty(map)) return;
             SaveAudio(installMods: false);
+            SavePalette(dir);
             string stageDir = Path.Combine(dir, ".mn9charsel");
             Directory.CreateDirectory(stageDir);
             File.WriteAllText(Path.Combine(stageDir, "start_map"), map + Environment.NewLine);
@@ -858,6 +874,7 @@ public sealed class MainWindow : Window
         {
             RefreshSaveBackups(_path.Text?.Trim());
             SyncCharacter(_path.Text?.Trim());
+            SyncPalette(_path.Text?.Trim());
             SyncPcTuning(_path.Text?.Trim());
             SyncTurbo(_path.Text?.Trim());
             LoadAudioSettings();
@@ -936,6 +953,20 @@ public sealed class MainWindow : Window
         int pi = Array.IndexOf(TurboPadValues, pad);
         _turboPad.SelectedIndex = pi >= 0 ? pi : 0;
         _turboKey.Text = key;
+    }
+
+    private void SyncPalette(string dir)
+    {
+        if (string.IsNullOrEmpty(dir)) return;
+        _palette.SelectedIndex = PaletteSettings.Read(dir);
+    }
+
+    private void SavePalette(string dir)
+    {
+        if (string.IsNullOrEmpty(dir)) return;
+        if (!Directory.Exists(Path.Combine(dir, "MN9Game", "Config"))) return;
+        int index = Math.Clamp(_palette.SelectedIndex, 0, PaletteSettings.Names.Length - 1);
+        PaletteSettings.Write(dir, index);
     }
 
     private void SyncCharacter(string dir)
@@ -1108,6 +1139,7 @@ public sealed class MainWindow : Window
         s.Height = int.Parse(wh[1]);
 
         _status.Text = "Applying...";
+        SavePalette(dir);
         string applied = Patcher.Apply(dir, s);
         string portApplied = Port.Apply(CollectPort());
         string character = Patcher.SetCharacter(dir, SelectedCharacter());
