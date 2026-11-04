@@ -1196,8 +1196,10 @@ public static class Port
         _ => true,
     };
 
-    /// <summary>Copy the selected addon packages into the game's DLC folder and
-    /// remove the ones that are switched off. Sources are never modified.</summary>
+    /// <summary>Stage the selected addon packages into the game's DLC folder as
+    /// extracted content directories (ReXGlue's content manager enumerates
+    /// directories, not STFS files), and remove the ones that are switched off.
+    /// Sources are never modified.</summary>
     public static string ApplyContent(PortSettings s)
     {
         string contentDir = ContentDirFor(s);
@@ -1209,32 +1211,37 @@ public static class Port
             Directory.CreateDirectory(contentDir);
             foreach (var p in DlcPackages)
             {
-                string target = DlcTargetFor(s, p);
+                string target = Path.Combine(contentDir, p.File);
                 if (DlcWanted(s, p.Key))
                 {
                     string source = DlcSourceFor(s, p);
-                    if (!File.Exists(source))
+                    if (!File.Exists(source) && !Directory.Exists(source))
                     {
                         missing.Add(p.Name);
                         continue;
                     }
-                    bool current = File.Exists(target) &&
-                                   new FileInfo(target).Length == new FileInfo(source).Length;
+                    bool current = Directory.Exists(target) &&
+                                   Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories).Any();
                     if (!current)
                     {
-                        File.Copy(source, target, overwrite: true);
+                        if (File.Exists(target)) File.Delete(target);
+                        if (Directory.Exists(target)) Directory.Delete(target, true);
+                        Directory.CreateDirectory(target);
+                        StageAddonSource(s, source, target);
                         staged.Add(p.Name);
                     }
                 }
-                else if (File.Exists(target))
+                else
                 {
-                    File.SetAttributes(target, FileAttributes.Normal);
-                    File.Delete(target);
-                    removed.Add(p.Name);
+                    bool removedOne = false;
+                    if (File.Exists(target)) { File.Delete(target); removedOne = true; }
+                    if (Directory.Exists(target)) { Directory.Delete(target, true); removedOne = true; }
+                    if (removedOne) removed.Add(p.Name);
                 }
             }
 
-            // Unknown addon packages imported by the user are staged verbatim.
+            // Unknown addon packages imported by the user are staged the same
+            // way, by their package file name.
             string cache = ManagedAddonCacheFor(s);
             if (Directory.Exists(cache))
             {
@@ -1243,10 +1250,15 @@ public static class Port
                 {
                     string name = Path.GetFileName(src);
                     if (known.Contains(name)) continue;
-                    string dst = Path.Combine(contentDir, name);
-                    if (!File.Exists(dst) || new FileInfo(dst).Length != new FileInfo(src).Length)
+                    string target = Path.Combine(contentDir, name);
+                    bool current = Directory.Exists(target) &&
+                                   Directory.EnumerateFiles(target, "*", SearchOption.AllDirectories).Any();
+                    if (!current)
                     {
-                        File.Copy(src, dst, overwrite: true);
+                        if (File.Exists(target)) File.Delete(target);
+                        if (Directory.Exists(target)) Directory.Delete(target, true);
+                        Directory.CreateDirectory(target);
+                        StageAddonSource(s, src, target);
                         staged.Add(name);
                     }
                 }
@@ -1264,20 +1276,35 @@ public static class Port
         return parts.Count == 0 ? "DLC unchanged." : "DLC: " + string.Join("; ", parts) + ".";
     }
 
+    private static void StageAddonSource(PortSettings s, string source, string target)
+    {
+        if (Directory.Exists(source))
+        {
+            CopyDirectory(source, target);
+            return;
+        }
+        string root = UseManaged(s) ? ManagedRootFor(s) : RuntimeSourceDir;
+        RunExtractor(root, source, target, _ => { });
+    }
+
     public static string ContentStatusFor(PortSettings s)
     {
         string dir = ContentDirFor(s);
         if (!Directory.Exists(dir)) return "No addon packages installed.";
-        var files = Directory.GetFiles(dir);
-        if (files.Length == 0) return "No addon packages installed.";
+        var dirs = Directory.GetDirectories(dir);
+        var looseFiles = Directory.GetFiles(dir);
+        if (dirs.Length == 0 && looseFiles.Length == 0) return "No addon packages installed.";
         var known = DlcPackages.Where(p => IsStaged(s, p)).Select(p => p.Name).ToList();
-        var knownFiles = DlcPackages.Select(p => Path.GetFileName(DlcTargetFor(s, p)))
-                                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        int extra = files.Count(f => !knownFiles.Contains(Path.GetFileName(f)));
-        long bytes = files.Sum(f => new FileInfo(f).Length);
+        long bytes = 0;
+        foreach (string d in dirs)
+            bytes += Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories)
+                             .Sum(f => new FileInfo(f).Length);
+        bytes += looseFiles.Sum(f => new FileInfo(f).Length);
+        int extra = dirs.Count(d => !DlcPackages.Any(p =>
+            string.Equals(Path.GetFileName(d), p.File, StringComparison.OrdinalIgnoreCase)));
         string list = known.Count > 0 ? string.Join(", ", known) : "unrecognized packages";
         if (extra > 0) list += $", +{extra} other";
-        return $"{files.Length} addon package(s), {FormatSize(bytes)} — {list}  —  {dir}";
+        return $"{dirs.Length + looseFiles.Length} addon package(s), {FormatSize(bytes)} — {list}  —  {dir}";
     }
 
     public static string DlcStatusFor(PortSettings s)
