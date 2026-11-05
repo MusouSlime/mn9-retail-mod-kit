@@ -333,7 +333,7 @@ public sealed class MainWindow : Window
 
     private readonly TextBlock _characterNote = new()
     {
-        Text = "Linux: uses the LD_PRELOAD spawn override. Ray currently uses Beck's controller/moveset while his DLC controller is being fixed.",
+        Text = "Linux: uses the LD_PRELOAD spawn override. MegaXel uses the PC build's built-in Spw11 form. Ray currently uses Beck's controller/moveset while his DLC controller is being fixed.",
         Foreground = Brushes.Gray,
         TextWrapping = TextWrapping.Wrap,
         FontSize = 12,
@@ -601,7 +601,7 @@ public sealed class MainWindow : Window
         Tip(_postShader, "Post-process style: Metallic (smooth, default), retro (pixelation/quantisation), Noir, Dot Matrix, Cinematic or Posterize.");
         Tip(_retroTex, "Texture-level retro look: nearest-neighbour filtering and 256px max mips (also lowers VRAM).");
         Tip(_fxaa, "Post-process FXAA. Smooths model and texture edges; works with the selected post style. Costs 8 texture taps.");
-        Tip(_character, "Choose the character used by the spawn override.");
+        Tip(_character, "Choose the character used by the spawn override. MegaXel uses the PC build's built-in Spw11 pawn, not the 360 DLC.");
         Tip(setChar, "Save the selection without launching.");
         Tip(launchChar, "Save the selection, install the Steam shim, and launch through Steam.");
         Tip(apply, "Write the selected settings to the ReXGlue port config and the PC game config (with a backup).");

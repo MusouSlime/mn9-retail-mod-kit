@@ -665,7 +665,7 @@ public static class Patcher
 
     public static readonly string[] CharacterIds = { "beck", "gold", "retro", "call", "ray", "megaxel" };
     public static readonly string[] CharacterNames =
-        { "Beck", "Golden Beck", "Retro Hero", "Call skin", "Ray skin", "MegaXEL Beck" };
+        { "Beck", "Golden Beck", "Retro Hero", "Call skin", "Ray skin", "MegaXel form" };
 
     public static string CharacterConfigPath(string gameDir) =>
         Path.Combine(gameDir, ".mn9charsel", "character");
@@ -829,7 +829,7 @@ public static class Patcher
         "retro" => "Retro Hero",
         "call" => "Call skin",
         "ray" => "Ray skin",
-        "megaxel" => "MegaXEL Beck",
+        "megaxel" => "MegaXel form",
         _ => "Beck",
     };
 
@@ -880,7 +880,8 @@ case "$char" in
 esac
 skin=""
 case "$char" in
-  call|ray|megaxel) skin="$char"; char="beck" ;;
+  call|ray) skin="$char"; char="beck" ;;
+  megaxel) char="beck"; LIB="$GAME/.mn9charsel/libmn9spawn_megaxel.so" ;;
 esac
 export MN9_CHARACTER="$char"
 export MN9_SKIN="$skin"
@@ -1108,6 +1109,11 @@ fi
         string lib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9spawn.so");
         if (File.Exists(lib))
             InstallFile(lib, Path.Combine(destDir, "libmn9spawn.so"));
+        // MegaXel uses the PC build's built-in MN9Spw11Pawn; its spawn shim has
+        // the Spw11 pawn/archetype names baked in.
+        string megaxel = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9spawn_megaxel.so");
+        if (File.Exists(megaxel))
+            InstallFile(megaxel, Path.Combine(destDir, "libmn9spawn_megaxel.so"));
         string fx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libpostfx.so");
         if (File.Exists(fx))
         {

@@ -8,7 +8,7 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
-## Xel Launcher 1.4.2
+## Xel Launcher 1.4.3
 
 Two top-level pages — **Port** and **Steam** — with the same sub-tabs
 (Setup, Display, Quality, Audio, Gameplay, Character, Saves, Advanced).
@@ -36,8 +36,10 @@ Both platforms are supported, including a Windows ReXGlue runtime.
 - **Turbo auto-fire (Linux PC build)** — holding the fire button keeps firing
   at 6–20 taps per second. R3 can be reassigned from Direct Change 3 to the
   auto-fire toggle; mouse fire included.
-- **Character select** — Beck, Call, Ray, Gold and Retro via a spawn override
-  (Linux).
+- **Character select** — Beck, Call, Ray, Gold, Retro and **MegaXel** via a
+  spawn override (Linux). MegaXel does not need the Xbox 360 DLC: the Steam
+  build already contains the Spw11 pawn, model and materials, and the launcher
+  now spawns that form directly.
 - **Saves** — timestamped backups, manifests, restore and safe mode.
 - **Fast boot** — one A at the title reaches the main menu. The press is held
   for 150 ms so the 60 Hz guest cannot miss it; the controller was verified on
