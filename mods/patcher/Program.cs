@@ -310,7 +310,7 @@ public sealed class MainWindow : Window
     private readonly CheckBox _fullscreen = new() { Content = "Fullscreen" };
     private readonly CheckBox _vsync = new() { Content = "VSync", IsChecked = true };
     private readonly CheckBox _voice = new() { Content = "Steam voice", IsChecked = true };
-    private readonly CheckBox _movies = new() { Content = "Play intro movies" };
+    private readonly CheckBox _movies = new() { Content = "Skip intro movies" };
     private readonly CheckBox _mouse = new() { Content = "Free the mouse (external patch)" };
     private readonly CheckBox _laa = new() { Content = "Large Address Aware (32-bit game, up to 4 GB)" };
     private readonly CheckBox _lock = new() { Content = "Lock config (stop game-side saving)", IsChecked = true };
@@ -598,7 +598,7 @@ public sealed class MainWindow : Window
         Tip(_fullscreen, "Run fullscreen instead of a window.");
         Tip(_vsync, "Synchronize to the display refresh rate.");
         Tip(_voice, "Steam voice interface (retail default on). Turning it off writes bHasVoiceEnabled=False.");
-        Tip(_movies, "Play the startup/intro movies.");
+        Tip(_movies, "Skip the startup/intro movies (sets bForceNoMovies).");
         Tip(_mouse, "External patch that releases the mouse cursor from the game window.");
         Tip(_laa, "Allow the 32-bit executable to use up to 4 GB of address space.");
         Tip(_lock, "Make the config read-only after applying so the game cannot overwrite it.");
@@ -692,6 +692,7 @@ public sealed class MainWindow : Window
                 Section("Cutscenes & dialog",
                     _skipCutscenes,
                     _disableDialog,
+                    _movies,
                     new TextBlock
                     {
                         Text = "These options are written to .mn9charsel/options and applied when you launch through the Character tab.",
@@ -800,7 +801,7 @@ public sealed class MainWindow : Window
             Children =
             {
                 Section("Advanced",
-                    CheckList(_voice, _mouse, _laa, _lock, _movies)),
+                    CheckList(_voice, _mouse, _laa, _lock)),
             },
         };
 
@@ -1265,7 +1266,7 @@ public sealed class MainWindow : Window
             Fullscreen = _fullscreen.IsChecked == true,
             Vsync = _vsync.IsChecked == true,
             Voice = _voice.IsChecked == true,
-            Movies = _movies.IsChecked == true,
+            Movies = _movies.IsChecked != true,
             MouseFix = _mouse.IsChecked == true,
             Laa = _laa.IsChecked == true,
             LockConfig = _lock.IsChecked == true,

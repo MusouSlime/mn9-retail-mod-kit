@@ -8,6 +8,12 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
+## Xel Launcher 1.4.5
+
+- Added **Skip intro movies** to the Steam → Gameplay tab (writes
+  `bForceNoMovies=True`); the previous "Play intro movies" advanced toggle is
+  replaced by this clearer option.
+
 ## Xel Launcher 1.4.4
 
 - **Boss roster in the character dropdown** — Boss 01 Pyro through Boss 08
