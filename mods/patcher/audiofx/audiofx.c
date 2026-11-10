@@ -18,6 +18,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <pthread.h>
 
 typedef unsigned int ALuint;
 typedef int ALint;
@@ -29,7 +30,9 @@ typedef long long sf_count_t;
 #define AL_NO_ERROR 0
 #define AL_BUFFER 0x1009
 #define AL_SOURCE_STATE 0x1010
+#define AL_INITIAL 0x1011
 #define AL_PLAYING 0x1012
+#define AL_STOPPED 0x1014
 #define AL_LOOPING 0x1007
 #define AL_GAIN 0x100A
 #define AL_PITCH 0x1003
@@ -96,6 +99,17 @@ static float g_voice_pitch = 1.0f, g_voice_pitch_rand = 0.0f;
 static double g_voice_line_last = 0.0;
 static float g_voice_line_pitch = 1.0f;
 static int g_voice_random = 0;
+static int g_title_voice_mode = 0;   // 0 = off, -1 = random, >0 = 1-based index
+static char g_title_voice_dir[1024];
+static char g_title_voice_name[128]; // specific file basename, e.g. MN9_TCV_beck.ogg
+static char g_title_files[64][1024];
+static int g_title_file_count = -1;
+static short* g_title_pcm = NULL;
+static long long g_title_frames = 0;
+static int g_title_rate = 0, g_title_ch = 0, g_title_fmt = 0;
+static char g_title_last_path[1024];
+static int g_at_title = 0;
+static int g_title_voice_done = 0;
 static ALuint g_voice_ext_src = 0, g_voice_ext_buf = 0;
 static ALuint g_voice_game_src = 0;
 static double g_voice_ext_until = 0;
@@ -116,6 +130,7 @@ static float g_music_game_gain = 1.0f;
 static ALuint g_bgm_src = 0;
 static double g_bgm_dur = 0.0;
 static char g_music_dir[1024];
+static int g_music_variant = 0;   // 0 = both, 1 = normal only, 2 = retro (8-bit) only
 static char g_files[512][1024];
 static int g_file_count = -1;
 static int g_last_file = -1;
@@ -134,7 +149,9 @@ static char g_stage[128];
 static double g_stage_last = 0;
 static char g_cur_key[160];        // stage/BGM the assigned track belongs to
 static char g_cur_path[1024];      // track currently playing for that BGM
+static char g_cur_dir[1024];       // folder the current track was picked from (if any)
 static int g_cur_valid = 0;
+static volatile int g_mus_busy = 0; // guards external music reload/advance
 typedef struct { char key[160]; char path[1024]; } MusicAssign;
 static MusicAssign g_assign[64];   // remembered stage/BGM -> track for this run
 static int g_assign_count = 0;
@@ -409,6 +426,9 @@ static float voice_pitch_factor(void) {
 }
 static int is_dir(const char* p) { struct stat st; return stat(p, &st) == 0 && S_ISDIR(st.st_mode); }
 static int file_exists(const char* p) { struct stat st; return p && *p && stat(p, &st) == 0 && S_ISREG(st.st_mode); }
+static int cmp_paths(const void* a, const void* b) {
+  return strcmp((const char*)a, (const char*)b);
+}
 static int list_audio(const char* dir, char files[][1024], int max) {
   DIR* d = opendir(dir); if (!d) return 0; int n = 0; struct dirent* e;
   while ((e = readdir(d)) && n < max) {
@@ -417,7 +437,10 @@ static int list_audio(const char* dir, char files[][1024], int max) {
         strcasecmp(dot, ".mp3") && strcasecmp(dot, ".opus")) continue;
     snprintf(files[n], 1024, "%s/%s", dir, e->d_name); n++;
   }
-  closedir(d); return n;
+  closedir(d);
+  // Deterministic order so a numeric selection always means the same line.
+  qsort(files, (size_t)n, 1024, cmp_paths);
+  return n;
 }
 static void load_map(void) {
   if (g_map_loaded) return; g_map_loaded = 1;
@@ -448,15 +471,35 @@ static void update_stage_ex(double min_interval) {
   fseek(f, 0, SEEK_END); long sz = ftell(f); long start = sz > 32768 ? sz - 32768 : 0;
   fseek(f, start, SEEK_SET);
   char buf[33000]; size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); buf[n] = 0;
+
+  // Title-screen detection: the game logs "Browse: BootGame?.../TitleMenu?..."
+  // on the title screens and "LoadMap: <Map>" / "Browse: <Map>" once it
+  // travels. The last of those events decides where we are.
+  const char* pb = NULL; char* qb = buf;
+  while ((qb = strstr(qb, "Browse:"))) { pb = qb; qb += 7; }
+
   const char* p = NULL; char* q = buf;
   while ((q = strstr(q, "LoadMap:"))) { p = q; q += 8; }
   if (!p) { q = buf; while ((q = strstr(q, "Server switch level:"))) { p = q; q += 20; } }
-  if (!p) return;
-  p = strchr(p, ':'); if (!p) return; p++;
-  while (*p == ' ') p++;
+
+  const char* ev = p;
+  if (pb && (!p || pb > p)) ev = pb;
+  if (!ev) return;
+
+  const char* b = strchr(ev, ':'); if (!b) return;
+  b++;
+  while (*b == ' ') b++;
   char name[128]; int i = 0;
-  while (*p && *p != '?' && *p != '\n' && *p != '\r' && *p != ' ' && i < 127) name[i++] = *p++;
+  while (*b && *b != '?' && *b != '\n' && *b != '\r' && *b != ' ' && i < 127) name[i++] = *b++;
   name[i] = 0;
+
+  int is_title = !strcmp(name, "TitleMenu") || !strcmp(name, "BootGame");
+  if (is_title != g_at_title) {
+    g_at_title = is_title;
+    if (!is_title) g_title_voice_done = 0;   // allow one line on the next visit
+    fprintf(stderr, "[audiofx] %s (%s)\n", is_title ? "at title screen" : "left title screen", name);
+  }
+  if (is_title) return;
   if (*name && strcmp(name, g_stage)) {
     snprintf(g_stage, sizeof(g_stage), "%s", name);
     fprintf(stderr, "[audiofx] stage=%s\n", g_stage);
@@ -473,7 +516,10 @@ static const char* mapped_path(void) {
   return def;
 }
 static int duck_active(void) { return g_duck && now_s() < g_duck_until; }
-static float music_gain_now(void) { return g_music_gain * g_music_game_gain * (duck_active() ? g_duck_factor : 1.0f); }
+// The external track replaces the game's BGM, so it must not inherit the BGM
+// source gain: the game creates that source at gain 0 on menu/title screens and
+// only some stages ramp it, which made replacement music silent there.
+static float music_gain_now(void) { return g_music_gain * (duck_active() ? g_duck_factor : 1.0f); }
 static void night_process(short* data, size_t count) {
   for (size_t i = 0; i < count; i++) {
     float x = data[i] / 32768.0f;
@@ -533,7 +579,32 @@ static void refresh_gains(void) {
   if (g_ext_src && al.sourcef) al.sourcef(g_ext_src, AL_GAIN, music_gain_now());
   for (int i = 0; i < g_music_src_count; i++) apply_gain(g_music_srcs[i]);
 }
+
+// Dialog ducking ends on a timer, but gains are otherwise only re-applied when
+// the game calls into OpenAL. Without this watcher the replacement BGM stayed
+// at the ducked volume on quiet screens (title/menu).
+static void external_music_tick(void);
+
+static void* gain_watch(void* arg) {
+  (void)arg;
+  int last = 0;
+  for (;;) {
+    struct timespec ts = { 0, 200 * 1000 * 1000 };
+    nanosleep(&ts, NULL);
+    external_music_tick();
+    int now = duck_active();
+    if (now != last) {
+      last = now;
+      refresh_gains();
+      fprintf(stderr, "[audiofx] duck %s -> music gain %.2f\n",
+              now ? "on" : "off", music_gain_now());
+    }
+  }
+  return NULL;
+}
 static void stop_voice_external(void);
+
+static void set_title_voice(const char* v);
 
 static void maybe_reload_conf(void) {
   static double last = 0;
@@ -567,6 +638,18 @@ static void maybe_reload_conf(void) {
     else if (!strcmp(k, "voice_pitch")) vp = (float)atof(v);
     else if (!strcmp(k, "voice_pitch_rand")) vpr = (float)atof(v);
     else if (!strcmp(k, "voice_random")) vrand = (*v && *v != '0');
+    else if (!strcmp(k, "music_variant")) {
+      int nv = !strcmp(v, "normal") ? 1 : !strcmp(v, "retro") ? 2 : 0;
+      if (nv != g_music_variant) { g_music_variant = nv; g_file_count = -1; }
+    }
+    else if (!strcmp(k, "title_voice")) set_title_voice(v);
+    else if (!strcmp(k, "title_voice_dir")) {
+      if (strcmp(v, g_title_voice_dir)) {
+        snprintf(g_title_voice_dir, sizeof(g_title_voice_dir), "%s", v);
+        g_title_file_count = -1;
+        g_title_last_path[0] = 0;
+      }
+    }
   }
   fclose(f);
   int changed = fabsf(mg - g_music_gain) > 0.001f ||
@@ -627,6 +710,11 @@ static void scan_dir_recursive(const char* dir, int depth) {
     if (!dot) continue;
     if (strcasecmp(dot, ".ogg") && strcasecmp(dot, ".wav") && strcasecmp(dot, ".flac") &&
         strcasecmp(dot, ".mp3") && strcasecmp(dot, ".opus")) continue;
+    // Normal vs retro (8-bit) BGM selection for the randomizer.
+    if (g_music_variant != 0) {
+      int retro = strcasestr(e->d_name, "_8bit") != NULL;
+      if ((g_music_variant == 1 && retro) || (g_music_variant == 2 && !retro)) continue;
+    }
     snprintf(g_files[g_file_count], sizeof(g_files[0]), "%s", full);
     g_file_count++;
   }
@@ -814,8 +902,34 @@ static void resolve_core(void) {
   if (!al.getbufferiv) al.getbufferiv = dlsym(RTLD_NEXT, "alGetBufferiv");
   if (!al.geterror) al.geterror = dlsym(RTLD_NEXT, "alGetError");
 }
+static int play_external_track(const char* path) {
+  short* pcm = NULL; long long frames = 0; int rate = 0, ch = 0, fmt = 0;
+  if (!load_track(path, &pcm, &frames, &rate, &ch, &fmt)) return 0;
+  if (g_night) night_process(pcm, (size_t)frames * ch);
+  stop_external();
+  if (!al.gen_buffers || !al.gen_sources || !al.bufdata || !al.sourcei) { free(pcm); return 0; }
+  al.gen_buffers(1, &g_ext_buf);
+  al.bufdata(g_ext_buf, fmt, pcm, (ALsizei)(frames * ch * 2), rate);
+  al.gen_sources(1, &g_ext_src);
+  al.sourcei(g_ext_src, AL_BUFFER, (ALint)g_ext_buf);
+  al.sourcei(g_ext_src, AL_SOURCE_RELATIVE, AL_TRUE);
+  if (al.sourcefv) { ALfloat p[3] = {0,0,0}; al.sourcefv(g_ext_src, AL_POSITION, p); }
+  // Play once: when the file ends the watcher advances to the next track so a
+  // short song does not repeat forever on a stage.
+  al.sourcei(g_ext_src, AL_LOOPING, 0);
+  if (al.sourcef) al.sourcef(g_ext_src, AL_GAIN, music_gain_now());
+  al.play(g_ext_src);
+  // keep the game's own BGM muted under the replacement track
+  refresh_gains();
+  const char* base = strrchr(path, '/'); base = base ? base + 1 : path;
+  fprintf(stderr, "[audiofx] music -> %s%s%s (%.1fs %dHz %dch)\n", g_stage[0] ? g_stage : "-", g_stage[0] ? " / " : "", base, (double)frames / rate, rate, ch);
+  free(pcm);
+  return 1;
+}
+
 static void start_external(void) {
   if (g_music_mode < 2) return;
+  if (g_mus_busy) return;
   resolve_core();
   update_stage_ex(0.2);
   const char* forced = mapped_path();
@@ -826,53 +940,103 @@ static void start_external(void) {
   // was cutting tracks off mid-song.
   if (g_ext_src && g_cur_valid && !strcmp(key, g_cur_key)) return;
 
+  g_mus_busy = 1;
   char path[1024]; path[0] = 0;
+  char dir[1024]; dir[0] = 0;
   const char* remembered = assign_lookup(key);
   if (remembered && file_exists(remembered)) {
     snprintf(path, sizeof(path), "%s", remembered);
+    if (forced && *forced && is_dir(forced)) snprintf(dir, sizeof(dir), "%s", forced);
     fprintf(stderr, "[audiofx] keep %s -> %s\n", key, path);
   } else {
     if (forced && *forced) {
       if (is_dir(forced)) {
         char sf[128][1024]; int n = list_audio(forced, sf, 128);
-        if (n <= 0) return;
+        if (n <= 0) { g_mus_busy = 0; return; }
         int k = (int)(rng_next() % (unsigned)n); snprintf(path, sizeof(path), "%s", sf[k]);
+        snprintf(dir, sizeof(dir), "%s", forced);
       } else {
         snprintf(path, sizeof(path), "%s", forced);
       }
     } else {
-      if (g_music_mode == 1) return;
+      if (g_music_mode == 1) { g_mus_busy = 0; return; }
       scan_music();
-      int pick = pick_global(); if (pick < 0) return;
+      int pick = pick_global(); if (pick < 0) { g_mus_busy = 0; return; }
       g_last_file = pick; snprintf(path, sizeof(path), "%s", g_files[pick]);
     }
     assign_store(key, path);
     fprintf(stderr, "[audiofx] assign %s -> %s\n", key, path);
   }
   snprintf(g_cur_path, sizeof(g_cur_path), "%s", path);
+  snprintf(g_cur_dir, sizeof(g_cur_dir), "%s", dir);
   snprintf(g_cur_key, sizeof(g_cur_key), "%s", key);
   g_cur_valid = 1;
-  short* pcm = NULL; long long frames = 0; int rate = 0, ch = 0, fmt = 0;
-  if (!load_track(path, &pcm, &frames, &rate, &ch, &fmt)) {
-    assign_forget(key);
-    return;
-  }
-  if (g_night) night_process(pcm, (size_t)frames * ch);
-  stop_external();
-  if (!al.gen_buffers || !al.gen_sources || !al.bufdata || !al.sourcei) { free(pcm); return; }
-  al.gen_buffers(1, &g_ext_buf);
-  al.bufdata(g_ext_buf, fmt, pcm, (ALsizei)(frames * ch * 2), rate);
-  al.gen_sources(1, &g_ext_src);
-  al.sourcei(g_ext_src, AL_BUFFER, (ALint)g_ext_buf);
-  al.sourcei(g_ext_src, AL_SOURCE_RELATIVE, AL_TRUE);
-  if (al.sourcefv) { ALfloat p[3] = {0,0,0}; al.sourcefv(g_ext_src, AL_POSITION, p); }
-  al.sourcei(g_ext_src, AL_LOOPING, 1);
-  if (al.sourcef) al.sourcef(g_ext_src, AL_GAIN, music_gain_now());
-  al.play(g_ext_src);
-  const char* base = strrchr(path, '/'); base = base ? base + 1 : path;
-  fprintf(stderr, "[audiofx] music -> %s%s%s (%.1fs %dHz %dch)\n", g_stage[0] ? g_stage : "-", g_stage[0] ? " / " : "", base, (double)frames / rate, rate, ch);
-  free(pcm);
+  if (!play_external_track(path)) assign_forget(key);
+  g_mus_busy = 0;
 }
+
+/* Choose the file that follows the one that just ended. */
+static int next_external_path(char* out, size_t n) {
+  if (g_cur_dir[0]) {
+    static char sf[128][1024];
+    int cnt = list_audio(g_cur_dir, sf, 128);
+    if (cnt > 0) {
+      int idx = -1;
+      for (int i = 0; i < cnt; i++) if (!strcmp(sf[i], g_cur_path)) { idx = i; break; }
+      int pick = idx >= 0 ? (idx + 1) % cnt : 0;
+      snprintf(out, n, "%s", sf[pick]);
+      return 1;
+    }
+  }
+  scan_music();
+  if (g_file_count > 0) {
+    int pick = -1;
+    if (g_music_mode == 3) {
+      int idx = -1;
+      for (int i = 0; i < g_file_count; i++)
+        if (!strcmp(g_files[i], g_cur_path)) { idx = i; break; }
+      pick = idx >= 0 ? (idx + 1) % g_file_count : 0;   // playlist: next song
+    } else {
+      pick = pick_global();   // random / shuffle keep their own order
+    }
+    if (pick >= 0) {
+      g_last_file = pick;
+      snprintf(out, n, "%s", g_files[pick]);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Called from the watcher thread when the external track stops. */
+static void advance_external(void) {
+  if (g_music_mode < 2 || !g_cur_valid || g_mus_busy) return;
+  if (g_file_count <= 0 && !g_cur_dir[0]) return;
+  g_mus_busy = 1;
+  char path[1024];
+  char prev[1024];
+  snprintf(prev, sizeof(prev), "%s", g_cur_path);
+  if (next_external_path(path, sizeof(path)) && play_external_track(path)) {
+    snprintf(g_cur_path, sizeof(g_cur_path), "%s", path);
+    if (g_cur_key[0]) assign_store(g_cur_key, path);
+  } else {
+    // nothing else to play: replay the current track
+    snprintf(g_cur_path, sizeof(g_cur_path), "%s", prev);
+    play_external_track(prev);
+  }
+  g_mus_busy = 0;
+}
+
+static void external_music_tick(void) {
+  if (g_music_mode < 2 || !g_ext_src || g_mus_busy) return;
+  if (!al.getsourcei) al.getsourcei = dlsym(RTLD_NEXT, "alGetSourcei");
+  if (!al.getsourcei) return;
+  ALint st = AL_INITIAL;
+  al.getsourcei(g_ext_src, AL_SOURCE_STATE, &st);
+  if (st == AL_PLAYING) return;
+  advance_external();
+}
+
 static void stop_voice_external(void) {
   ALuint gs = g_voice_game_src;
   double until = g_voice_ext_until;
@@ -923,6 +1087,63 @@ static void voice_tick(void) {
   if (g_voice_ext_src && now_s() > g_voice_ext_until) stop_voice_external();
 }
 
+// Title-screen voice override: when the game plays a voice line on the title
+// screen and MN9_TITLE_VOICE is set, substitute one of the character
+// "Mighty No. 9" call lines from MN9_TITLE_VOICE_DIR (or a single file).
+static void start_title_voice(ALuint game_src, double orig_dur) {
+  if (g_title_voice_done) return;
+  if (g_title_file_count < 0) {
+    g_title_file_count = 0;
+    if (g_title_voice_dir[0]) g_title_file_count = list_audio(g_title_voice_dir, g_title_files, 64);
+    fprintf(stderr, "[audiofx] title voice: %d file(s) in %s\n",
+            g_title_file_count, g_title_voice_dir[0] ? g_title_voice_dir : "(none)");
+  }
+  if (g_title_file_count <= 0) return;
+  int idx;
+  if (g_title_voice_name[0]) {
+    idx = -1;
+    for (int j = 0; j < g_title_file_count; j++) {
+      const char* bn = strrchr(g_title_files[j], '/');
+      bn = bn ? bn + 1 : g_title_files[j];
+      if (!strcasecmp(bn, g_title_voice_name)) { idx = j; break; }
+    }
+    if (idx < 0) idx = 0;
+  } else if (g_title_voice_mode < 0) idx = (int)(rng_next() % (unsigned)g_title_file_count);
+  else idx = (g_title_voice_mode - 1) % g_title_file_count;
+  const char* path = g_title_files[idx];
+  if (strcmp(path, g_title_last_path)) {
+    short* pcm = NULL; long long frames = 0; int rate = 0, ch = 0, fmt = 0;
+    if (!load_track(path, &pcm, &frames, &rate, &ch, &fmt)) return;
+    free(g_title_pcm);
+    g_title_pcm = pcm; g_title_frames = frames; g_title_rate = rate;
+    g_title_ch = ch; g_title_fmt = fmt;
+    snprintf(g_title_last_path, sizeof(g_title_last_path), "%s", path);
+  }
+  if (!g_title_pcm) return;
+  stop_voice_external();
+  if (!al.gen_buffers || !al.gen_sources || !al.bufdata || !al.sourcei) return;
+  al.gen_buffers(1, &g_voice_ext_buf);
+  al.bufdata(g_voice_ext_buf, g_title_fmt, g_title_pcm,
+             (ALsizei)(g_title_frames * g_title_ch * 2), g_title_rate);
+  al.gen_sources(1, &g_voice_ext_src);
+  al.sourcei(g_voice_ext_src, AL_BUFFER, (ALint)g_voice_ext_buf);
+  al.sourcei(g_voice_ext_src, AL_SOURCE_RELATIVE, AL_TRUE);
+  if (al.sourcefv) { ALfloat p[3] = {0,0,0}; al.sourcefv(g_voice_ext_src, AL_POSITION, p); }
+  al.sourcei(g_voice_ext_src, AL_LOOPING, 0);
+  if (al.sourcef) {
+    al.sourcef(g_voice_ext_src, AL_GAIN, g_voice_gain);
+    al.sourcef(g_voice_ext_src, AL_PITCH, 1.0f);
+  }
+  al.play(g_voice_ext_src);
+  g_voice_game_src = game_src;
+  g_voice_ext_until = now_s() + (orig_dur > 0.0 ? orig_dur
+                                 : (double)g_title_frames / (g_title_rate ? g_title_rate : 1));
+  apply_gain(game_src);
+  g_title_voice_done = 1;
+  const char* base = strrchr(path, '/'); base = base ? base + 1 : path;
+  fprintf(stderr, "[audiofx] title voice -> %s\n", base);
+}
+
 static void dump_voice_clip(int idx, ALuint buf) {
   if (!voice_debug()) return;
   if (idx < 0 || idx >= g_vc_count || g_voice_dump_count >= 8) return;
@@ -951,6 +1172,9 @@ static void dump_voice_clip(int idx, ALuint buf) {
 static void classify_and_start(ALuint s) {
   if (!clamp_id(s)) return;
   resolve_core();
+  // Title-voice selection needs the log-derived "at title" flag even when
+  // music replacement is off, so poll it here as well.
+  if (g_title_voice_mode != 0) update_stage_ex(1.0);
   ALint buf = 0;
   if (al.getsourcei) al.getsourcei(s, AL_BUFFER, &buf);
   double d = dur((ALuint)buf);
@@ -1008,7 +1232,11 @@ static void classify_and_start(ALuint s) {
     }
     if (g_voice_log++ < 16)
       fprintf(stderr, "[audiofx] dialog pitch src=%u %.2f\n", s, p);
-    if (!g_voice_mute && g_voice_random && d >= 2.0) {
+    if (!g_voice_mute && g_title_voice_mode != 0 && g_at_title &&
+        d >= 0.6 && d <= 5.0) {
+      if (!g_voice_ext_src || now_s() >= g_voice_ext_until)
+        start_title_voice(s, d);
+    } else if (!g_voice_mute && g_voice_random && d >= 2.0) {
       if (!g_voice_ext_src || now_s() >= g_voice_ext_until) {
         int vi = vc_find_or_add((ALuint)buf);
         int pick = vi >= 0 ? vc_pick(vi) : -1;
@@ -1207,6 +1435,27 @@ void alSourcef(ALuint s, ALenum p, ALfloat v) {
   al.sourcef(s, p, v);
 }
 
+static void set_title_voice(const char* v) {
+  if (!v || !*v || !strcmp(v, "off") || !strcmp(v, "game")) {
+    g_title_voice_mode = 0; g_title_voice_name[0] = 0; return;
+  }
+  if (!strcmp(v, "random")) {
+    g_title_voice_mode = -1; g_title_voice_name[0] = 0; return;
+  }
+  int digits = 1;
+  for (const char* q = v; *q; q++)
+    if (*q < '0' || *q > '9') { digits = 0; break; }
+  if (digits) {
+    g_title_voice_mode = atoi(v);
+    if (g_title_voice_mode < 0) g_title_voice_mode = -1;
+    g_title_voice_name[0] = 0;
+    return;
+  }
+  snprintf(g_title_voice_name, sizeof(g_title_voice_name), "%s", v);
+  g_title_voice_mode = 1;   // nonzero: enabled; the name drives the pick
+  g_title_last_path[0] = 0;
+}
+
 __attribute__((constructor)) static void audiofx_init(void) {
   const char* m = getenv("MN9_AUDIO_MUSIC");
   if (m && !strcmp(m, "mute")) g_music_mode = 1;
@@ -1215,6 +1464,11 @@ __attribute__((constructor)) static void audiofx_init(void) {
   else if (m && !strcmp(m, "shuffle")) g_music_mode = 4;
   const char* d = getenv("MN9_AUDIO_MUSIC_DIR");
   if (d) snprintf(g_music_dir, sizeof(g_music_dir), "%s", d);
+  if (const char* v = getenv("MN9_AUDIO_MUSIC_VARIANT")) {
+    if (!strcmp(v, "normal")) g_music_variant = 1;
+    else if (!strcmp(v, "retro")) g_music_variant = 2;
+    else g_music_variant = 0;
+  }
   if (const char* v = getenv("MN9_AUDIO_SFX_PITCH")) g_sfx_pitch = (float)atof(v);
   if (const char* v = getenv("MN9_AUDIO_VOICE")) g_voice_mute = !strcmp(v, "mute");
   if (const char* v = getenv("MN9_AUDIO_VOICE_PITCH")) g_voice_pitch = (float)atof(v);
@@ -1222,12 +1476,19 @@ __attribute__((constructor)) static void audiofx_init(void) {
   if (g_voice_pitch < 0.5f || g_voice_pitch > 2.0f) g_voice_pitch = 1.0f;
   if (g_voice_pitch_rand < 0.0f || g_voice_pitch_rand > 0.5f) g_voice_pitch_rand = 0.0f;
   if (const char* v = getenv("MN9_AUDIO_VOICE_RANDOM")) g_voice_random = (*v && *v != '0');
+  if (const char* v = getenv("MN9_TITLE_VOICE")) set_title_voice(v);
+  if (const char* v = getenv("MN9_TITLE_VOICE_DIR"))
+    snprintf(g_title_voice_dir, sizeof(g_title_voice_dir), "%s", v);
   if (const char* v = getenv("MN9_AUDIO_MUSIC_MAP")) snprintf(g_map_path, sizeof(g_map_path), "%s", v);
   if (const char* v = getenv("MN9_AUDIO_DUCK")) g_duck = (*v && *v != '0');
   if (const char* v = getenv("MN9_AUDIO_NIGHT")) g_night = (*v && *v != '0');
   if (const char* v = getenv("MN9_AUDIO_MUSIC_GAIN")) g_music_gain = (float)atof(v);
   if (const char* v = getenv("MN9_AUDIO_SFX_GAIN")) g_sfx_gain = (float)atof(v);
   if (const char* v = getenv("MN9_AUDIO_VOICE_GAIN")) g_voice_gain = (float)atof(v);
+  {
+    pthread_t t;
+    if (pthread_create(&t, NULL, gain_watch, NULL) == 0) pthread_detach(t);
+  }
   g_rng = (unsigned int)(time(NULL) ^ getpid() ^ (unsigned long)&g_rng);
   if (!g_rng) g_rng = 1;
   if (g_music_mode >= 2) scan_music();

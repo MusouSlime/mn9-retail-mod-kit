@@ -8,6 +8,12 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
+## Xel Launcher 1.4.6
+
+- Custom music now advances to the next track in the folder when a song ends,
+  instead of looping the same track. Short songs no longer repeat on a stage;
+  playlist mode follows folder order, random/shuffle keep their own order.
+
 ## Xel Launcher 1.4.5
 
 - Added **Skip intro movies** to the Steam → Gameplay tab (writes
