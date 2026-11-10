@@ -663,12 +663,28 @@ public static class Patcher
         return log.ToString().Trim();
     }
 
-    public static readonly string[] CharacterIds = { "beck", "gold", "retro", "call", "ray", "megaxel" };
+    public static readonly string[] CharacterIds =
+    {
+        "beck", "gold", "retro", "call", "ray", "megaxel",
+        "boss01", "boss02", "boss03", "boss04", "boss05", "boss06", "boss07", "boss08", "boss10"
+    };
     public static readonly string[] CharacterNames =
-        { "Beck", "Golden Beck", "Retro Hero", "Call skin", "Ray skin", "MegaXel form" };
+    {
+        "Beck", "Golden Beck", "Retro Hero", "Call skin", "Ray skin", "MegaXel form",
+        "Boss 01 — Pyro", "Boss 02 — Cryo", "Boss 03 — Dynatron", "Boss 04 — Seismic",
+        "Boss 05 — Battalion", "Boss 06 — Countershade", "Boss 07 — Brandish",
+        "Boss 08 — Aviator", "Boss 10 — Tutorial boss"
+    };
 
     public static string CharacterConfigPath(string gameDir) =>
         Path.Combine(gameDir, ".mn9charsel", "character");
+
+    public static string SwapTargetPath(string gameDir) =>
+        Path.Combine(gameDir, ".mn9charsel", "swap_target");
+
+    public static bool IsBossId(string id) =>
+        id != null && id.StartsWith("boss", StringComparison.Ordinal) &&
+        int.TryParse(id.Substring(4), out int n) && n >= 1 && n <= 20;
 
     public static string OptionsPath(string gameDir) =>
         Path.Combine(gameDir, ".mn9charsel", "options");
@@ -802,6 +818,15 @@ public static class Patcher
     {
         try
         {
+            string swap = SwapTargetPath(gameDir);
+            if (File.Exists(swap))
+            {
+                string value = File.ReadAllText(swap).Trim().ToLowerInvariant();
+                const string prefix = "demoboss:bs";
+                if (value.StartsWith(prefix, StringComparison.Ordinal) &&
+                    int.TryParse(value.Substring(prefix.Length), out int id) && id >= 1 && id <= 20)
+                    return $"boss{id:00}";
+            }
             string path = CharacterConfigPath(gameDir);
             if (File.Exists(path))
             {
@@ -819,19 +844,40 @@ public static class Patcher
         if (!CharacterIds.Contains(character)) character = "beck";
         string path = CharacterConfigPath(gameDir);
         Directory.CreateDirectory(Path.GetDirectoryName(path));
-        File.WriteAllText(path, character + Environment.NewLine);
+        if (IsBossId(character))
+        {
+            int id = int.Parse(character.Substring(4));
+            // The wrapper only accepts its normal ids; the shim reads swap_target.
+            File.WriteAllText(path, "megaxel" + Environment.NewLine);
+            File.WriteAllText(SwapTargetPath(gameDir), $"demoboss:bs{id:00}" + Environment.NewLine);
+        }
+        else
+        {
+            File.WriteAllText(path, character + Environment.NewLine);
+            try { File.WriteAllText(SwapTargetPath(gameDir), ""); } catch { }
+        }
         return $"Character set to {CharacterDisplay(character)}.";
     }
 
-    public static string CharacterDisplay(string id) => id switch
+    public static string CharacterDisplay(string id)
     {
-        "gold" => "Golden Beck",
-        "retro" => "Retro Hero",
-        "call" => "Call skin",
-        "ray" => "Ray skin",
-        "megaxel" => "MegaXel form",
-        _ => "Beck",
-    };
+        if (IsBossId(id))
+        {
+            int idn = int.Parse(id.Substring(4));
+            string[] names = { "", "Pyro", "Cryo", "Dynatron", "Seismic", "Battalion", "Countershade", "Brandish", "Aviator", "Tutorial boss" };
+            string nm = idn >= 1 && idn < names.Length ? names[idn] : "Boss";
+            return $"Boss {idn:00} — {nm}";
+        }
+        return id switch
+        {
+            "gold" => "Golden Beck",
+            "retro" => "Retro Hero",
+            "call" => "Call skin",
+            "ray" => "Ray skin",
+            "megaxel" => "MegaXel form",
+            _ => "Beck",
+        };
+    }
 
     public static string FindCharacterWrapper(string gameDir)
     {
@@ -1114,6 +1160,10 @@ fi
         string megaxel = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9spawn_megaxel.so");
         if (File.Exists(megaxel))
             InstallFile(megaxel, Path.Combine(destDir, "libmn9spawn_megaxel.so"));
+        // Call/Ray skins are applied by the skin shim loaded by the wrapper.
+        string skinlib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9skin.so");
+        if (File.Exists(skinlib))
+            InstallFile(skinlib, Path.Combine(destDir, "libmn9skin.so"));
         string fx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libpostfx.so");
         if (File.Exists(fx))
         {

@@ -14,6 +14,10 @@ mkdir -p spawn_override
 # OpenAL music/SFX shim.
 "$CC" -O2 -shared -fPIC audiofx/audiofx.c -o spawn_override/libaudiofx.so -ldl -lm
 "$CC" -O2 -shared -fPIC skins/palette.c -o spawn_override/libmn9palette.so -ldl
+"$CXX" -O2 -shared -fPIC skins/skin.cpp -o spawn_override/libmn9skin.so -ldl
+
+# Character pawn override (MegaXel/bosses).
+"$CC" -O2 -shared -fPIC spawn_override/spawn_custom.c -o spawn_override/libmn9spawn_megaxel.so -ldl -lpthread
 
 # Fast-forward shim (scales AWorldInfo::TimeDilation).
 "$CC" -O2 -shared -fPIC turbo/turbo.c -o spawn_override/libmn9turbo.so -ldl

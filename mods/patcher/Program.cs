@@ -464,7 +464,13 @@ public sealed class MainWindow : Window
         {
             SaveAudio(installMods: false);
             string? steamDir = CurrentDir();
-            if (steamDir != null) SavePalette(steamDir);
+            if (steamDir != null)
+            {
+                SaveOptions(steamDir);
+                SavePalette(steamDir);
+                Patcher.SetCharacter(steamDir, SelectedCharacter());
+                Patcher.InstallModFiles(steamDir);
+            }
             _status.Text = "Launching the PC build through Steam...";
             string msg = Port.LaunchPc();
             _status.Text = msg;

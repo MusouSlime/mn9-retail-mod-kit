@@ -30,11 +30,18 @@ if [ -z "$char" ] && [ -f "$CONF" ]; then
   char="$(head -n1 "$CONF" | tr -d '[:space:]')"
 fi
 case "$char" in
-  gold|retro|beck|call|ray) ;;
+  gold|retro|beck|call|ray|megaxel) ;;
   "") char="beck" ;;
-  *) echo "mn9-charselect: unknown character '$char' (beck/gold/retro/call/ray)" >&2; exit 2 ;;
+  *) echo "mn9-charselect: unknown character '$char' (beck/gold/retro/call/ray/megaxel)" >&2; exit 2 ;;
+esac
+skin=""
+case "$char" in
+  call) char="beck"; LIB="$HERE/libmn9spawn_megaxel.so" ;;
+  ray) skin="ray"; char="beck" ;;
+  megaxel) char="beck"; LIB="$HERE/libmn9spawn_megaxel.so" ;;
 esac
 export MN9_CHARACTER="$char"
+export MN9_SKIN="$skin"
 export MN9_GAME_DIR="$GAME"
 
 OPTS="$GAME/.mn9charsel/options"
@@ -55,7 +62,7 @@ export MN9_DISABLE_DIALOG="${dialog:-0}"
 export MN9_CEL_SHADING="${cel:-0}"
 export MN9_FXAA="${fxaa:-1}"
 AC="$GAME/.mn9charsel/audio.conf"
-audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; amg=1; asg=1; avg=1; aduck=1; anight=0
+audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; avp=1; avpr=0; avr=0; amg=1; asg=1; avg=1; aduck=1; anight=0; atv=game; amv=both
 if [ -f "$AC" ]; then
   audio="$(sed -n 's/^enabled=//p' "$AC" | tail -n1)"
   amusic="$(sed -n 's/^music=//p' "$AC" | tail -n1)"
@@ -63,11 +70,16 @@ if [ -f "$AC" ]; then
   amap="$(sed -n 's/^music_map=//p' "$AC" | tail -n1)"
   apitch="$(sed -n 's/^sfx_pitch=//p' "$AC" | tail -n1)"
   avoice="$(sed -n 's/^voice=//p' "$AC" | tail -n1)"
+  avp="$(sed -n 's/^voice_pitch=//p' "$AC" | tail -n1)"
+  avpr="$(sed -n 's/^voice_pitch_rand=//p' "$AC" | tail -n1)"
+  avr="$(sed -n 's/^voice_random=//p' "$AC" | tail -n1)"
   amg="$(sed -n 's/^music_gain=//p' "$AC" | tail -n1)"
   asg="$(sed -n 's/^sfx_gain=//p' "$AC" | tail -n1)"
   avg="$(sed -n 's/^voice_gain=//p' "$AC" | tail -n1)"
   aduck="$(sed -n 's/^duck=//p' "$AC" | tail -n1)"
   anight="$(sed -n 's/^night=//p' "$AC" | tail -n1)"
+  atv="$(sed -n 's/^title_voice=//p' "$AC" | tail -n1)"
+  amv="$(sed -n 's/^music_variant=//p' "$AC" | tail -n1)"
 fi
 case "$strength" in
   noir)       export MN9_POSTFX_MODE=noir ;;
@@ -85,6 +97,11 @@ RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/mn9mod-$(id -u)"
 mkdir -p "$RUNTIME"
 ln -sf "$LIB" "$RUNTIME/libmn9spawn.so"
 PRELOAD="$RUNTIME/libmn9spawn.so"
+SKINLIB="$HERE/libmn9skin.so"
+if [ -n "${skin:-}" ] && [ -f "$SKINLIB" ]; then
+  ln -sf "$SKINLIB" "$RUNTIME/libmn9skin.so"
+  PRELOAD="$PRELOAD:$RUNTIME/libmn9skin.so"
+fi
 if [ "$cel" = "1" ] && [ -f "$FX" ]; then
   ln -sf "$FX" "$RUNTIME/libpostfx.so"
   PRELOAD="$PRELOAD:$RUNTIME/libpostfx.so"
@@ -96,31 +113,18 @@ if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
   export MN9_AUDIO_MUSIC_DIR="${adir:-}"
   export MN9_AUDIO_SFX_PITCH="${apitch:-0}"
   export MN9_AUDIO_VOICE="${avoice:-game}"
+  export MN9_AUDIO_VOICE_PITCH="${avp:-1}"
+  export MN9_AUDIO_VOICE_PITCH_RAND="${avpr:-0}"
+  export MN9_AUDIO_VOICE_RANDOM="${avr:-0}"
   export MN9_AUDIO_MUSIC_GAIN="${amg:-1}"
   export MN9_AUDIO_SFX_GAIN="${asg:-1}"
   export MN9_AUDIO_VOICE_GAIN="${avg:-1}"
+  export MN9_TITLE_VOICE="${atv:-game}"
+  export MN9_AUDIO_MUSIC_VARIANT="${amv:-both}"
+  export MN9_TITLE_VOICE_DIR="$GAME/.mn9charsel/titlevoices"
   export MN9_AUDIO_MUSIC_MAP="${amap:-}"
   export MN9_AUDIO_DUCK="${aduck:-1}"
   export MN9_AUDIO_NIGHT="${anight:-0}"
-fi
-TURBO="$GAME/.mn9charsel/turbo.conf"
-TLIB="$HERE/libmn9turbo.so"
-turbo=0; trate=10; tbutton=2; tpad=-1; tkey=
-if [ -f "$TURBO" ]; then
-  turbo="$(sed -n 's/^enabled=//p' "$TURBO" | tail -n1)"
-  trate="$(sed -n 's/^rate=//p' "$TURBO" | tail -n1)"
-  tbutton="$(sed -n 's/^button=//p' "$TURBO" | tail -n1)"
-  tpad="$(sed -n 's/^pad=//p' "$TURBO" | tail -n1)"
-  tkey="$(sed -n 's/^key=//p' "$TURBO" | tail -n1)"
-fi
-if [ "${turbo:-0}" = "1" ] && [ -f "$TLIB" ]; then
-  ln -sf "$TLIB" "$RUNTIME/libmn9turbo.so"
-  PRELOAD="$PRELOAD:$RUNTIME/libmn9turbo.so"
-  export MN9_TURBO_ENABLED=1
-  export MN9_TURBO_RATE="${trate:-10}"
-  export MN9_TURBO_BUTTON="${tbutton:-2}"
-  export MN9_TURBO_PAD="${tpad:--1}"
-  export MN9_TURBO_KEY="$tkey"
 fi
 PAL="$HERE/libmn9palette.so"
 if [ -f "$PAL" ]; then

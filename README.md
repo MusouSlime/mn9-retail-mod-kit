@@ -8,6 +8,19 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
+## Xel Launcher 1.4.4
+
+- **Boss roster in the character dropdown** — Boss 01 Pyro through Boss 08
+  Aviator, plus the tutorial boss. Bosses use their own models, animation
+  trees and attack clips without triggering boss-battle state.
+- **Call and Ray skins fixed** — Call uses her `Pl02` pawn assets; the Ray
+  skin shim now hooks SDL, loads `Pl03_Model.Mesh.PL03_Body` and applies.
+- **Boss attack clips** — firing plays the boss's own attack animation;
+  facing follows the movement direction per boss.
+- **Steam launch applies the skin** — "Launch Steam version" now writes the
+  selected character and installs the mod files before starting the game.
+- **Call/Ray skin library** is installed with the other mods.
+
 ## Xel Launcher 1.4.3
 
 Two top-level pages — **Port** and **Steam** — with the same sub-tabs
