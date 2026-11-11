@@ -8,6 +8,19 @@ Patcher and reversible mods for the retail PC build of **Mighty No. 9**
 - **Linux:** source build or the `XelLauncher-x86_64.AppImage` release asset;
   the low-resource profiles and ELF mods also run there.
 
+## Xel Launcher 1.4.7
+
+- **Trinity (NPC) in the character dropdown** — uses the Colosseum NPC model
+  (`B13C_body1`) retargeted onto the player rig, with her boss attack clips
+  mapped onto the shot, dash and weapon-get slots.
+- **Native Call and Ray spawn** — both now use their own pawns and
+  controllers (the pre-1.4.4 `SpawnActor` substitution), instead of Beck mesh
+  skins; the launcher labels are plain "Call" and "Ray".
+- **Call's barrier absorbs Xel** — while the shield is up, weakened enemies
+  inside it run the game's own resorption.
+- **Crash guard** for the world-tick hook when the shim is loaded into helper
+  processes (checks the address mapping before patching).
+
 ## Xel Launcher 1.4.6
 
 - Custom music now advances to the next track in the folder when a song ends,

@@ -51,7 +51,10 @@ public sealed class PortSettings
 
     public string LicenseMask = "4294967295";
     public string UserDataRoot = "";
-    public Dictionary<string, string> Keybinds = new();  // keybind_a -> "Space"
+    public Dictionary<string, string> Keybinds = new();  // keybind_a -> "Space", gamepad_a -> "GamepadA"
+
+    // Character select (replaces Credits in main menu)
+    public string SelectedCharacter = "normal"; // normal, golden, megaxel, call, ray, retro
 
     public string Resolution => $"{Width}x{Height}";
 }
@@ -159,6 +162,7 @@ public static class Port
             "7FD109F2FD0BAC6C09C21E384168DE065AC92BFB58"),
     };
 
+    // Keyboard-as-pad bindings (existing mnk_mode)
     public static readonly string[] KeybindNames =
     {
         "keybind_a", "keybind_b", "keybind_x", "keybind_y",
@@ -168,6 +172,22 @@ public static class Port
         "keybind_left_trigger", "keybind_right_trigger",
         "keybind_lstick_press", "keybind_rstick_press",
     };
+
+    // Gamepad button remappings (new - for actual gamepad)
+    public static readonly string[] GamepadBindNames =
+    {
+        "gamepad_a", "gamepad_b", "gamepad_x", "gamepad_y",
+        "gamepad_start", "gamepad_back",
+        "gamepad_dpad_up", "gamepad_dpad_down", "gamepad_dpad_left", "gamepad_dpad_right",
+        "gamepad_left_shoulder", "gamepad_right_shoulder",
+        "gamepad_left_trigger", "gamepad_right_trigger",
+        "gamepad_lstick_press", "gamepad_rstick_press",
+        "gamepad_lstick_up", "gamepad_lstick_down", "gamepad_lstick_left", "gamepad_lstick_right",
+        "gamepad_rstick_up", "gamepad_rstick_down", "gamepad_rstick_left", "gamepad_rstick_right",
+    };
+
+    // All bindable inputs (keyboard + gamepad)
+    public static readonly string[] AllBindNames = KeybindNames.Concat(GamepadBindNames).ToArray();
 
     public static string Home() =>
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -380,7 +400,7 @@ public static class Port
         return s;
     }
 
-    private static void ReadInto(PortSettings s, string path)
+    public static void ReadInto(PortSettings s, string path)
     {
         foreach (string raw in File.ReadAllLines(path))
         {
@@ -424,6 +444,7 @@ public static class Port
                 case "managed": s.Managed = value != "0"; break;
                 case "license_mask" when value.Length > 0: s.LicenseMask = value; break;
                 case "user_data_root": s.UserDataRoot = value; break;
+                case "selected_character" when value.Length > 0: s.SelectedCharacter = value; break;
                 case "resolution":
                     string[] wh = value.Split('x');
                     if (wh.Length == 2 && int.TryParse(wh[0], out int w) && int.TryParse(wh[1], out int h))
@@ -487,6 +508,7 @@ public static class Port
             ["managed"] = managed ? "1" : "0",
             ["license_mask"] = s.LicenseMask,
             ["user_data_root"] = s.UserDataRoot,
+            ["selected_character"] = s.SelectedCharacter,
         };
         foreach (var kv in s.Keybinds)
             values[kv.Key] = kv.Value;
@@ -612,22 +634,28 @@ public static class Port
             psi.ArgumentList.Add(s.Width.ToString());
             psi.ArgumentList.Add("--window_height");
             psi.ArgumentList.Add(s.Height.ToString());
-            switch (s.BootMode)
+            // Internal guest render/video mode. Without these the runtime keeps
+            // its own default and the chosen resolution only sizes the window.
+            psi.ArgumentList.Add("--video_mode_width");
+            psi.ArgumentList.Add(s.Width.ToString());
+            psi.ArgumentList.Add("--video_mode_height");
+            psi.ArgumentList.Add(s.Height.ToString());
+            string cl = s.BootMode switch
             {
-                case "normal":
-                    break;
-                case "title":
-                    psi.ArgumentList.Add("--cl");
-                    psi.ArgumentList.Add("TitleMenu");
-                    break;
-                case "stage":
-                    psi.ArgumentList.Add("--cl");
-                    psi.ArgumentList.Add("Map_StageSelect");
-                    break;
-                default:
-                    psi.ArgumentList.Add("--cl");
-                    psi.ArgumentList.Add("BootGame -novideo");
-                    break;
+                "normal" => "",
+                "title" => "TitleMenu",
+                "stage" => "Map_StageSelect",
+                _ => s.StartMode switch
+                {
+                    "title" => "TitleMenu",
+                    "game" => "Map_StageSelect",
+                    _ => "BootGame -novideo",
+                },
+            };
+            if (cl.Length > 0)
+            {
+                psi.ArgumentList.Add("--cl");
+                psi.ArgumentList.Add(cl);
             }
             if (s.Fullscreen) psi.ArgumentList.Add("--fullscreen");
             else psi.ArgumentList.Add("--no-fullscreen");
@@ -639,7 +667,27 @@ public static class Port
             psi.ArgumentList.Add("--log_file");
             psi.ArgumentList.Add(Path.Combine(logs, "mn9_managed.log"));
 
-            psi.Environment["MN9_QUALITY"] = s.Quality;
+            if (string.IsNullOrWhiteSpace(s.Scale))
+            {
+                // The runtime has no MN9_QUALITY knob; expand the preset into
+                // the scale it actually reads. Explicit Scale overrides win.
+                switch ((s.Quality ?? "").ToLowerInvariant())
+                {
+                    case "max":
+                        psi.Environment["MN9_SCALE"] = "3";
+                        break;
+                    case "high":
+                        // Native runtime settings; nothing to override.
+                        break;
+                    case "balanced":
+                        psi.Environment["MN9_SCALE"] = "1";
+                        break;
+                    case "performance":
+                        psi.Environment["MN9_SCALE"] = "1";
+                        psi.Environment["MN9_LOWMEM"] = "1";
+                        break;
+                }
+            }
             if (openModLoader) psi.Environment["MN9_MODLOADER"] = "1";
             psi.Environment["MN9_VSYNC"] = s.Vsync ? "true" : "false";
             psi.Environment["REX_FULLSCREEN"] = s.Fullscreen ? "true" : "false";
@@ -651,10 +699,7 @@ public static class Port
             psi.Environment["MN9_LOWMEM"] = s.LowMemory ? "1" : "0";
             psi.Environment["MN9_GAME_HZ"] = s.GameHz == 60 ? "60" : "120";
             psi.Environment["MN9_FXAA"] = s.Fxaa;
-            psi.Environment["MN9_AUDIO_ENABLED"] = s.AudioEnabled ? "1" : "0";
-            psi.Environment["MN9_AUDIO_MASTER"] = s.AudioMaster.ToString();
             psi.Environment["MN9_AUDIO_MUTE"] = s.AudioMute ? "1" : "0";
-            psi.Environment["MN9_AUDIO_NIGHT"] = s.AudioNight ? "1" : "0";
             if (!string.IsNullOrWhiteSpace(s.Scale)) psi.Environment["MN9_SCALE"] = s.Scale;
             if (!string.IsNullOrWhiteSpace(s.Aniso)) psi.Environment["MN9_ANISO"] = s.Aniso;
             if (!string.IsNullOrWhiteSpace(s.Msaa)) psi.Environment["MN9_MSAA"] = s.Msaa;
@@ -677,11 +722,10 @@ public static class Port
             // title screen. Send a single A press there to open the main menu;
             // the extra presses used by the other boot modes can advance story
             // slides, so they stay opt-in.
-            if (proc != null && s.SkipIntro)
+            if (proc != null && s.SkipIntro && cl.StartsWith("BootGame", StringComparison.Ordinal))
             {
-                bool fast = s.BootMode == "fast";
                 _ = Task.Run(() => IntroSkipper.RunAsync(
-                    proc, s, fast ? 1 : s.SkipPresses, fast ? Math.Max(s.SkipDelay, 18) : s.SkipDelay));
+                    proc, s, 1, Math.Max(s.SkipDelay, 18)));
             }
         }
         catch (Exception ex)
@@ -1133,19 +1177,26 @@ public static class Port
     {
         var backups = ListBackups(s);
         if (backups.Count == 0) return "No port save backups yet.";
-        var latest = backups[0];
+        return RestoreSave(s, backups[0].Id);
+    }
+
+    public static string RestoreSave(PortSettings s, string id)
+    {
+        var backups = ListBackups(s);
+        var backup = backups.FirstOrDefault(b => b.Id == id);
+        if (backup == null) return $"Backup not found: {id}";
         string root = SaveRoot(s);
         int restored = 0;
-        foreach (string file in Directory.GetFiles(latest.Path, "*", SearchOption.AllDirectories))
+        foreach (string file in Directory.GetFiles(backup.Path, "*", SearchOption.AllDirectories))
         {
             if (Path.GetFileName(file) == "manifest.tsv") continue;
-            string rel = Path.GetRelativePath(latest.Path, file);
+            string rel = Path.GetRelativePath(backup.Path, file);
             string target = Path.Combine(root, rel);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, overwrite: true);
             restored++;
         }
-        return $"Restored {restored} file(s) from {latest.Id}";
+        return $"Restored {restored} file(s) from {backup.Id}";
     }
 
     public static string ClearSave(PortSettings s)

@@ -30,14 +30,14 @@ if [ -z "$char" ] && [ -f "$CONF" ]; then
   char="$(head -n1 "$CONF" | tr -d '[:space:]')"
 fi
 case "$char" in
-  gold|retro|beck|call|ray|megaxel) ;;
+  gold|retro|beck|call|ray|trinity|megaxel) ;;
   "") char="beck" ;;
   *) echo "mn9-charselect: unknown character '$char' (beck/gold/retro/call/ray/megaxel)" >&2; exit 2 ;;
 esac
 skin=""
 case "$char" in
-  call) char="beck"; LIB="$HERE/libmn9spawn_megaxel.so" ;;
-  ray) skin="ray"; char="beck" ;;
+  call|ray) ;;                                    # native pawn + controller
+  trinity) char="beck" ;;                         # Trinity package keeps Beck's pawn
   megaxel) char="beck"; LIB="$HERE/libmn9spawn_megaxel.so" ;;
 esac
 export MN9_CHARACTER="$char"

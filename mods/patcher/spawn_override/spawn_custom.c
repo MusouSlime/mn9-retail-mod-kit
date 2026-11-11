@@ -324,6 +324,8 @@ static void spawn_class_path(const char* sel, wchar_t* out, int outn)
   out[n] = 0;
 }
 
+static void* find_loaded_named(const char* want);
+
 static int resolve_pawn_slots(void)
 {
   if (g_arch) return 1;
@@ -332,15 +334,30 @@ static int resolve_pawn_slots(void)
   if (!g_pc_class) return 0;
 
   wchar_t ap[96];
-  arch_path(g_selection, ap, 96);
-  g_arch = find(NULL, NULL, ap, 0);
-  if (!g_arch) {
-    LOG("[mn9pawn] archetype %ls not found\n", ap);
-    return 0;
-  }
-  for (int i = 0; i < 7; i++) {
-    int off = prop_offset(g_arch, SLOT_PROPS[i]);
-    g_arch_slot[i] = off > 0 ? *(void**)((char*)g_arch + off) : NULL;
+  if (!strcmp(g_selection, "ray")) {
+    // Ray has no player pawn class in MN9Game.  Use Beck's archetype only for
+    // component identification and take the body/arm meshes from the map.
+    void* body = find_loaded_named("PL03_Body");
+    void* lhand = find_loaded_named("PL03_LHand");
+    void* rclaw = find_loaded_named("PL03_RClaw");
+    if (!body) return 0;   // wait for the map package
+    g_arch = find(NULL, NULL, L"MN9Game.Default__MN9Spw09Pawn", 0);
+    if (!g_arch) return 0;
+    g_arch_slot[0] = g_arch_slot[1] = g_arch_slot[2] = body;
+    g_arch_slot[3] = g_arch_slot[4] = lhand ? lhand : body;
+    g_arch_slot[5] = g_arch_slot[6] = rclaw ? rclaw : body;
+    LOG("[mn9pawn] ray slots body=%p lhand=%p rclaw=%p\n", body, lhand, rclaw);
+  } else {
+    arch_path(g_selection, ap, 96);
+    g_arch = find(NULL, NULL, ap, 0);
+    if (!g_arch) {
+      LOG("[mn9pawn] archetype %ls not found\n", ap);
+      return 0;
+    }
+    for (int i = 0; i < 7; i++) {
+      int off = prop_offset(g_arch, SLOT_PROPS[i]);
+      g_arch_slot[i] = off > 0 ? *(void**)((char*)g_arch + off) : NULL;
+    }
   }
   if (!g_beck_mesh[0]) {
     loadobj_fn load = (loadobj_fn)LOADOBJ_ADDR;
@@ -875,12 +892,265 @@ static void demoboss_anim_drive(void* pn, void* act)
   tk++;
 }
 
+/* ---- native character swap: pawn archetype + player controller ----
+ *
+ * Ported from Xel Launcher 1.0.7-1.4.0 (libmn9spawn.so md5 7b14d970...), which
+ * hooked UWorld::SpawnActor before the first world tick.  The stage spawns the
+ * player pawn during InitGame, so a tick-based patch is always too late; the
+ * old builds substituted, at spawn time:
+ *
+ *   arg2 (class)   MN9Game.MN9Spw09Pawn    -> MN9Game.MN9Pl02Pawn / MN9GameContent.MN9Pl03Pawn
+ *   arg6 (template) Beck archetype          -> Pl02_Archetype.Pl02_Archetype /
+ *                                              pl03_archetype.Pawn.Pl03Pawn
+ *   arg2 (class)   MN9Game.MN9Pl01Controller-> MN9Game.MN9Pl02Controller /
+ *                                              MN9GameContent.MN9Pl03Controller
+ */
+__attribute__((visibility("hidden"))) void* g_real_spawn;
+static int   g_nsp_resolved;
+static void* g_nsp_beck_pawn;
+static void* g_nsp_beck_ctrl;
+static void* g_nsp_pawn;
+static void* g_nsp_ctrl;
+static void* g_nsp_arch;
+static int   g_nsp_log_pawn;
+static int   g_nsp_log_ctrl;
+
+static int native_spawn_wanted(void)
+{
+  return !strcmp(g_selection, "call") || !strcmp(g_selection, "ray");
+}
+
+static void native_spawn_resolve(void)
+{
+  if (g_nsp_resolved) return;
+  findobj_fn find = (findobj_fn)FINDOBJ_ADDR;
+  loadobj_fn load = (loadobj_fn)LOADOBJ_ADDR;
+  int is_call = !strcmp(g_selection, "call");
+
+  g_nsp_beck_pawn = find(NULL, NULL, L"MN9Game.MN9Spw09Pawn", 0);
+  g_nsp_beck_ctrl = find(NULL, NULL, L"MN9Game.MN9Pl01Controller", 0);
+
+  if (is_call) {
+    g_nsp_pawn = find(NULL, NULL, L"MN9Game.MN9Pl02Pawn", 0);
+    g_nsp_ctrl = find(NULL, NULL, L"MN9Game.MN9Pl02Controller", 0);
+    g_nsp_arch = find(NULL, NULL, L"Pl02_Archetype.Pl02_Archetype", 0);
+    if (!g_nsp_arch && g_nsp_pawn && load)
+      g_nsp_arch = load(g_nsp_pawn, NULL, L"Pl02_Archetype.Pl02_Archetype", NULL, 0, NULL, 0);
+    if (!g_nsp_arch && load)
+      g_nsp_arch = load(NULL, NULL, L"Pl02_Archetype.Pl02_Archetype", NULL, 0, NULL, 0);
+  } else {
+    g_nsp_pawn = find(NULL, NULL, L"MN9GameContent.MN9Pl03Pawn", 0);
+    g_nsp_ctrl = find(NULL, NULL, L"MN9GameContent.MN9Pl03Controller", 0);
+    if (!g_nsp_pawn && load)
+      g_nsp_pawn = load(NULL, NULL, L"pl03_archetype.MN9Pl03Pawn", NULL, 0, NULL, 0);
+    if (!g_nsp_ctrl && load)
+      g_nsp_ctrl = load(NULL, NULL, L"pl03_archetype.MN9Pl03Controller", NULL, 0, NULL, 0);
+    g_nsp_arch = find(NULL, NULL, L"pl03_archetype.Pawn.Pl03Pawn", 0);
+    if (!g_nsp_arch && load)
+      g_nsp_arch = load(NULL, NULL, L"pl03_archetype.Pawn.Pl03Pawn", NULL, 0, NULL, 0);
+  }
+
+  if (g_nsp_beck_pawn && g_nsp_pawn && g_nsp_ctrl) {
+    g_nsp_resolved = 1;
+    LOG("[mn9pawn] native spawn ready %s: beck=%p pawn=%p ctrl=%p arch=%p\n",
+        g_selection, g_nsp_beck_pawn, g_nsp_pawn, g_nsp_ctrl, g_nsp_arch);
+  }
+}
+
+__attribute__((visibility("hidden"))) void* spawn_hook(void* world, void* cls, uint64_t fname, void* outer,
+                        void* a5, void* tpl, unsigned a7, unsigned a8,
+                        void* a9, void* a10, unsigned a11, void* a12)
+{
+  if (!g_nsp_resolved) native_spawn_resolve();
+  if (g_nsp_resolved) {
+    if (cls == g_nsp_beck_pawn) {
+      cls = g_nsp_pawn;
+      if (g_nsp_arch) tpl = g_nsp_arch;
+      if (!g_nsp_log_pawn) {
+        g_nsp_log_pawn = 1;
+        LOG("[mn9pawn] native spawn: pawn %p -> %p arch -> %p\n",
+            g_nsp_beck_pawn, g_nsp_pawn, tpl);
+      }
+    } else if (cls == g_nsp_beck_ctrl) {
+      cls = g_nsp_ctrl;
+      if (!g_nsp_log_ctrl) {
+        g_nsp_log_ctrl = 1;
+        LOG("[mn9pawn] native spawn: controller %p -> %p\n", g_nsp_beck_ctrl, g_nsp_ctrl);
+      }
+    }
+  }
+  return ((spawn_fn)g_real_spawn)(world, cls, fname, outer, a5, tpl,
+                                  a7, a8, a9, a10, a11, a12);
+}
+
+
+/* ---- Call barrier: Xel absorb (Resorption) ----
+ *
+ * Beck absorbs resorption-ready enemies by dashing through them.  Call's
+ * barrier is a shield actor (MN9Shell_Pl02Barrier); while it is up, run the
+ * same enemy Resorption() on anything weakened inside the bubble. */
+static int   g_ba_enabled = 1;
+static int   g_ba_debug;
+static unsigned g_ba_ticks;
+static void* g_ba_pawn;
+static void* g_ba_barrier;
+static int   g_ba_absorbed;
+static int   g_ba_loc_off;
+static int   g_ba_ctrl_off;
+static int   g_ba_rg_off;
+static int   g_ba_hp_off;
+static int   g_ba_hpmax_off;
+static int   g_ba_owner_off;
+static void* g_ba_ecls[128];
+static int   g_ba_necls;
+static void* g_ba_xcls[256];
+static int   g_ba_nxcls;
+
+static void* ba_find_fn(void* obj, const char* name)
+{
+  if (!obj || !addr_mapped(obj)) return NULL;
+  uint64_t fnn = fname(name);
+  return fnn ? ((void*(*)(void*, uint64_t, unsigned))FINDFUNC_ADDR)(obj, fnn, 0) : NULL;
+}
+
+static void ba_call(void* obj, void* fn, void* parms)
+{
+  ((void(*)(void*, void*, void*, void*))PROCESSEVENT_ADDR)(obj, fn, parms, NULL);
+}
+
+static void* ba_find_pawn(void)
+{
+  static void* cls;
+  if (g_ba_pawn && addr_mapped(g_ba_pawn)) {
+    if (g_ba_ctrl_off <= 0 || *(void**)((char*)g_ba_pawn + g_ba_ctrl_off)) return g_ba_pawn;
+    g_ba_pawn = NULL;
+  }
+  if (!cls) cls = ((findobj_fn)FINDOBJ_ADDR)(NULL, NULL, L"MN9Game.MN9Pl02Pawn", 0);
+  if (!cls) return NULL;
+  void** objs = *(void***)OBJ_ARRAY;
+  int count = *(int*)OBJ_COUNT;
+  if (!objs || count <= 0 || count > 400000) return NULL;
+  int low = count - 20000; if (low < 0) low = 0;
+  for (int i = count - 1; i >= low; i--) {
+    if (!addr_mapped(objs + i)) break;
+    void* o = objs[i];
+    if (!o || !addr_mapped(o) || *(void**)((char*)o + OFF_CLASS) != cls) continue;
+    if (g_ba_ctrl_off <= 0) g_ba_ctrl_off = prop_offset(o, "Controller");
+    if (g_ba_ctrl_off > 0 && !*(void**)((char*)o + g_ba_ctrl_off)) continue;
+    g_ba_pawn = o;
+    return o;
+  }
+  return NULL;
+}
+
+static void* ba_find_barrier(void* pawn)
+{
+  void** objs = *(void***)OBJ_ARRAY;
+  int count = *(int*)OBJ_COUNT;
+  if (!objs || count <= 0 || count > 400000) return NULL;
+  int low = count - 25000; if (low < 0) low = 0;
+  for (int i = count - 1; i >= low; i--) {
+    if (!addr_mapped(objs + i)) break;
+    void* o = objs[i];
+    if (!o || !addr_mapped(o)) continue;
+    if (g_ba_owner_off > 0 && *(void**)((char*)o + g_ba_owner_off) != pawn) continue;
+    char cn[96];
+    if (!class_name_of(o, cn, sizeof cn)) continue;
+    if (strncmp(cn, "MN9Shell_Pl02Barrier", 20)) continue;
+    return o;
+  }
+  return NULL;
+}
+
+static int ba_enemy_class(void* o)
+{
+  void* cls = *(void**)((char*)o + OFF_CLASS);
+  if (!cls) return 0;
+  for (int i = 0; i < g_ba_necls; i++) if (g_ba_ecls[i] == cls) return 1;
+  for (int i = 0; i < g_ba_nxcls; i++) if (g_ba_xcls[i] == cls) return 0;
+  void* fn = ba_find_fn(o, "IsResorption");
+  if (fn) {
+    if (g_ba_necls < 128) g_ba_ecls[g_ba_necls++] = cls;
+    return 1;
+  }
+  if (g_ba_nxcls < 256) g_ba_xcls[g_ba_nxcls++] = cls;
+  return 0;
+}
+
+static void barrier_absorb_tick(void* world)
+{
+  (void)world;
+  if (!g_ba_enabled) return;
+  unsigned t = g_ba_ticks++;
+  void* pawn = ba_find_pawn();
+  if (!pawn) return;
+  if (!g_ba_loc_off) {
+    g_ba_loc_off = prop_offset(pawn, "Location");
+    g_ba_ctrl_off = prop_offset(pawn, "Controller");
+    g_ba_owner_off = prop_offset(pawn, "Owner");
+    g_ba_rg_off = prop_offset(pawn, "ResorptionGrade");
+    g_ba_hp_off = prop_offset(pawn, "Health");
+    g_ba_hpmax_off = prop_offset(pawn, "HealthMax");
+  }
+  if ((t % 15) == 0) g_ba_barrier = ba_find_barrier(pawn);
+  if (g_ba_debug && (t % 180) == 0)
+    LOG("[mn9bar] t=%u pawn=%p barrier=%p absorbed=%d\n", t, pawn, g_ba_barrier, g_ba_absorbed);
+  if (!g_ba_barrier || !addr_mapped(g_ba_barrier)) return;
+  if ((t % 20) != 0 || g_ba_loc_off <= 0) return;
+
+  float* bp = (float*)((char*)g_ba_barrier + g_ba_loc_off);
+  void** objs = *(void***)OBJ_ARRAY;
+  int count = *(int*)OBJ_COUNT;
+  if (!objs || count <= 0 || count > 400000) return;
+  int low = count - 30000; if (low < 0) low = 0;
+  for (int i = count - 1; i >= low; i--) {
+    if (!addr_mapped(objs + i)) break;
+    void* o = objs[i];
+    if (!o || !addr_mapped(o) || o == pawn || o == g_ba_barrier) continue;
+    if (!ba_enemy_class(o)) continue;
+    if (g_ba_ctrl_off > 0 && !*(void**)((char*)o + g_ba_ctrl_off)) continue;  // not a live pawn
+    float* ep = (float*)((char*)o + g_ba_loc_off);
+    float dx = ep[0] - bp[0], dy = ep[1] - bp[1], dz = ep[2] - bp[2];
+    if (dx*dx + dy*dy + dz*dz > 190.0f * 190.0f) continue;
+
+    int hp = g_ba_hp_off > 0 ? *(int*)((char*)o + g_ba_hp_off) : -1;
+    int hpmax = g_ba_hpmax_off > 0 ? *(int*)((char*)o + g_ba_hpmax_off) : -1;
+    int grade = g_ba_rg_off > 0 ? *(int*)((char*)o + g_ba_rg_off) : -1;
+    if (!(grade >= 0 || (hp >= 0 && hpmax > 0 && hp * 4 <= hpmax))) continue;
+
+    unsigned char b[256]; memset(b, 0, sizeof b);
+    void* can = ba_find_fn(o, "CanGotoStateResorption");
+    if (can) {
+      ba_call(o, can, b);
+      if (!b[0]) continue;
+    }
+    void* res = ba_find_fn(o, "Resorption");
+    if (!res) continue;
+    char cn[96], on[96];
+    class_name_of(o, cn, sizeof cn);
+    obj_name_str(o, on, sizeof on);
+    LOG("[mn9bar] absorb %s (%s) hp=%d/%d grade=%d d=%.0f\n",
+        cn, on, hp, hpmax, grade,
+        sqrtf(dx*dx + dy*dy + dz*dz));
+    memset(b, 0, sizeof b);
+    ba_call(o, res, b);
+    g_ba_absorbed++;
+  }
+}
+
+
 __attribute__((visibility("hidden"), used)) void mega_tick(void* world)
 {
   (void)world;
   if (!g_tick_alive) { g_tick_alive = 1; LOG("[mn9pawn] world tick hook alive\n"); }
+  // Native call: the spawn hook already replaced the pawn, archetype and
+  // controller; the only thing left is the barrier Xel absorb.
+  if (!strcmp(g_selection, "call")) { barrier_absorb_tick(world); return; }
+  if (native_spawn_wanted()) return;
   if (g_matvis_mode) {
-    static int done; static void* ma; static void* mc;
+    static int done; static void* ma; 
+
+static void* mc;
     void* pn=find_player_pawn(); if (!pn) return;
     int lo=prop_offset(pn,"Location"), ro=prop_offset(pn,"Rotation");
     if (!done) {
@@ -3559,6 +3829,9 @@ static void arm_spawn_stub(void* beck, void* spw09, void* target)
   __builtin___clear_cache((char*)g_spawn_stub, (char*)g_spawn_stub + SPAWN_STUB_SZ);
 }
 
+static unsigned char* g_near_page;
+
+/* Install the native character spawn hook (see spawn_hook above). */
 static int install_spawn_hook(unsigned char* near)
 {
   if (g_spawn_hooked) return 0;
@@ -3568,33 +3841,22 @@ static int install_spawn_hook(unsigned char* near)
     LOG("[mn9pawn] spawn hook: unexpected prologue\n");
     return -1;
   }
+
+  // entry stub: jump straight into spawn_hook before the prologue runs
+  unsigned char absjmp[12] = { 0x48, 0xb8, 0,0,0,0,0,0,0,0, 0xff, 0xe0 };
   unsigned char* st = near + SPAWN_STUB_OFF;
   memset(st, 0x90, SPAWN_STUB_SZ);
-  int p = 0;
-  // movabs r10, beck
-  st[p++] = 0x49; st[p++] = 0xBA; p += 8;
-  // cmp rsi, r10
-  st[p++] = 0x4C; st[p++] = 0x39; st[p++] = 0xD6;
-  // je swap (rel32)
-  st[p++] = 0x0F; st[p++] = 0x84; int rel_je_at = p; p += 4;
-  // movabs r10, spw09
-  st[p++] = 0x49; st[p++] = 0xBA; p += 8;
-  st[p++] = 0x4C; st[p++] = 0x39; st[p++] = 0xD6;
-  // jne orig (rel32)
-  st[p++] = 0x0F; st[p++] = 0x85; int rel_jne_at = p; p += 4;
-  int swap = p;
-  // movabs rsi, target
-  st[p++] = 0x48; st[p++] = 0xBE; p += 8;
-  int orig = p;
-  memcpy(st + p, target, 10); p += 10;   // original prologue
-  st[p++] = 0x49; st[p++] = 0xBB; int back_at = p; p += 8;
-  st[p++] = 0x41; st[p++] = 0xFF; st[p++] = 0xE3;
-  // patch relative offsets
-  int32_t r1 = swap - (rel_je_at + 4);
-  int32_t r2 = orig - (rel_jne_at + 4);
-  memcpy(st + rel_je_at, &r1, 4);
-  memcpy(st + rel_jne_at, &r2, 4);
-  (void)back_at;
+  uint64_t entry = (uint64_t)(uintptr_t)spawn_hook;
+  memcpy(absjmp + 2, &entry, 8);
+  memcpy(st, absjmp, 12);
+
+  // real body: original prologue, then resume at +10
+  unsigned char* real = st + 0x40;
+  memcpy(real, target, 10);
+  uint64_t back = SPAWNACTOR_ADDR + 10;
+  memcpy(absjmp + 2, &back, 8);
+  memcpy(real + 10, absjmp, 12);
+  g_real_spawn = (void*)real;
   g_spawn_stub = st;
 
   long ps = sysconf(_SC_PAGESIZE);
@@ -3607,27 +3869,52 @@ static int install_spawn_hook(unsigned char* near)
   mprotect((void*)page, ps, PROT_READ | PROT_EXEC);
   __builtin___clear_cache((char*)target, (char*)target + 10);
   g_spawn_hooked = 1;
-  LOG("[mn9pawn] spawn hook installed\n");
+  LOG("[mn9pawn] native spawn hook installed\n");
   return 0;
+}
+
+static int addr_in_maps(unsigned long a)
+{
+  FILE* f = fopen("/proc/self/maps","r");
+  if (!f) return 1;
+  char line[512];
+  while (fgets(line,sizeof line,f)) {
+    unsigned long lo,hi; char perms[8];
+    if (sscanf(line,"%lx-%lx %7s",&lo,&hi,perms)!=3) continue;
+    if (a>=lo && a<hi) { fclose(f); return 1; }
+  }
+  fclose(f); return 0;
 }
 
 static int install_tick_hook(void)
 {
   unsigned char expect[10] = { 0x55, 0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x53 };
   unsigned char* target = (unsigned char*)TICK_ADDR;
+  LOG("[mn9pawn] tickh: target=%p\n", (void*)target);
+  if (!addr_in_maps(TICK_ADDR)) { LOG("[mn9pawn] tickh: not mapped, defer\n"); return -1; }
   if (memcmp(target, expect, sizeof expect) != 0) {
     fprintf(stderr, "[mn9pawn] unexpected UWorld::Tick prologue\n");
     return -1;
   }
 
   long ps = sysconf(_SC_PAGESIZE);
-  void* want = (void*)0x20000000UL;
-  unsigned char* near = mmap(want, ps, PROT_READ | PROT_WRITE | PROT_EXEC,
-                             MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
-  if (near == MAP_FAILED)
+  unsigned char* near = MAP_FAILED;
+  for (long k = 0; k <= 64 && near == MAP_FAILED; k++) {
+    void* want = (void*)(0x20000000UL + (unsigned long)(k * ps));
     near = mmap(want, ps, PROT_READ | PROT_WRITE | PROT_EXEC,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-  if (near == MAP_FAILED) return -1;
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+  }
+  if (near == MAP_FAILED) {
+    near = mmap(NULL, ps, PROT_READ | PROT_WRITE | PROT_EXEC,
+                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (near != MAP_FAILED) {
+      uintptr_t d1 = (uintptr_t)near > TICK_ADDR ? (uintptr_t)near - TICK_ADDR : TICK_ADDR - (uintptr_t)near;
+      uintptr_t d2 = (uintptr_t)near > SPAWNACTOR_ADDR ? (uintptr_t)near - SPAWNACTOR_ADDR : SPAWNACTOR_ADDR - (uintptr_t)near;
+      if (d1 > 0x7F000000UL || d2 > 0x7F000000UL) { munmap(near, ps); near = MAP_FAILED; }
+    }
+  }
+  if (near == MAP_FAILED) { LOG("[mn9pawn] near page unavailable\n"); return -1; }
+  g_near_page = near;
 
   unsigned char absjmp[12] = { 0x48, 0xb8, 0,0,0,0,0,0,0,0, 0xff, 0xe0 };
   memcpy(near, target, 10);
@@ -3635,6 +3922,7 @@ static int install_tick_hook(void)
   memcpy(absjmp + 2, &entry, 8);
   memcpy(near + 10, absjmp, 12);
 
+  LOG("[mn9pawn] tickh: near=%p\n", (void*)near);
   unsigned char* real = near + 0x40;
   memcpy(real, target, 10);
   uint64_t back = TICK_ADDR + 10;
@@ -3643,6 +3931,7 @@ static int install_tick_hook(void)
   g_real_tick = (tick_fn)real;
 
   uintptr_t page = (uintptr_t)target & ~(uintptr_t)(ps - 1);
+  LOG("[mn9pawn] tickh: mprotect page=%p\n", (void*)page);
   if (mprotect((void*)page, ps, PROT_READ | PROT_WRITE) != 0) return -1;
   target[0] = 0xE9;
   int32_t rel = (int32_t)((uintptr_t)near - (uintptr_t)(target + 5));
@@ -3656,6 +3945,12 @@ __attribute__((constructor)) static void mn9pawn_init(void)
 {
   const char* gd = getenv("MN9_GAME_DIR");
   if (!gd || !*gd) return;
+  {
+    char lp[1200];
+    snprintf(lp, sizeof lp, "%s/.mn9charsel/swap.log", gd);
+    g_logf = fopen(lp, "a");
+    LOG("[mn9pawn] init enter\n");
+  }
 
   char conf[1200];
   snprintf(conf, sizeof conf, "%s/.mn9charsel/character", gd);
@@ -3837,6 +4132,13 @@ __attribute__((constructor)) static void mn9pawn_init(void)
     g_overlay_mode = 1;
     LOG("[mn9pawn] overlay mode for %s\n", g_selection + 8);
   }
+  if (!strcmp(g_selection, "call")) {
+    const char* ba = getenv("MN9_BARRIER_ABSORB");
+    g_ba_enabled = !ba || (*ba && *ba != '0');
+    const char* dbg = getenv("MN9_BARRIER_DEBUG");
+    g_ba_debug = dbg && *dbg && *dbg != '0';
+    LOG("[mn9bar] barrier absorb %s debug=%d\n", g_ba_enabled ? "on" : "off", g_ba_debug);
+  }
   if (!strcmp(g_selection, "beck") || !*g_selection) return;
 
   {
@@ -3844,10 +4146,14 @@ __attribute__((constructor)) static void mn9pawn_init(void)
     snprintf(lpath, sizeof lpath, "%s/.mn9charsel/swap.log", gd);
     g_logf = fopen(lpath, "a");
   }
+  LOG("[mn9pawn] installing tick hook\n");
   if (install_tick_hook() != 0) {
     LOG("[mn9pawn] tick hook install failed\n");
     return;
   }
-  // spawn hook disabled for A/B test
+  if (native_spawn_wanted() && g_near_page) {
+    if (install_spawn_hook(g_near_page) != 0)
+      LOG("[mn9pawn] native spawn hook install failed\n");
+  }
   LOG("[mn9pawn] character swap hook ready (%s)\n", g_selection);
 }

@@ -351,13 +351,17 @@ public static class Patcher
             string systemData = Path.Combine(gameDir, "MN9Game", "SaveData", "SystemData.dat");
             if (File.Exists(systemData))
             {
-                if (s.LockConfig) Lock(systemData); else Unlock(systemData);
-                log.AppendLine(s.LockConfig ? "SystemData.dat locked (no game-side settings save)" : "SystemData.dat writable");
+                // Never lock this file. The game writes SystemData.dat and
+                // SaveDataN.dat in one batch; if the SystemData write fails,
+                // the whole batch is aborted and progress is not saved.
+                Unlock(systemData);
+                log.AppendLine("SystemData.dat writable (required for save batch)");
             }
 
             state.Profile = "custom";
             state.Created = created.ToList();
             SaveState(root, state);
+            SavePcSettings(gameDir, s);
 
             log.AppendLine("Config patched.");
             log.AppendLine(MousePatch.Set(gameDir, s.MouseFix));
@@ -536,7 +540,11 @@ public static class Patcher
             Unlock(dst);
             File.Copy(src, dst, overwrite: true);
             try { File.SetLastWriteTimeUtc(dst, File.GetLastWriteTimeUtc(src)); } catch { }
-            if (locked) Lock(dst); else Unlock(dst);
+            // SystemData.dat must stay writable: the game saves it together
+            // with SaveDataN.dat, and a failed write cancels the batch.
+            if (name.Equals("SystemData.dat", StringComparison.OrdinalIgnoreCase))
+                Unlock(dst);
+            else if (locked) Lock(dst); else Unlock(dst);
             restored++;
         }
 
@@ -665,12 +673,12 @@ public static class Patcher
 
     public static readonly string[] CharacterIds =
     {
-        "beck", "gold", "retro", "call", "ray", "megaxel",
+        "beck", "gold", "retro", "call", "ray", "trinity", "megaxel",
         "boss01", "boss02", "boss03", "boss04", "boss05", "boss06", "boss07", "boss08", "boss10"
     };
     public static readonly string[] CharacterNames =
     {
-        "Beck", "Golden Beck", "Retro Hero", "Call skin", "Ray skin", "MegaXel form",
+        "Beck", "Golden Beck", "Retro Hero", "Call", "Ray", "Trinity (NPC)", "MegaXel form",
         "Boss 01 — Pyro", "Boss 02 — Cryo", "Boss 03 — Dynatron", "Boss 04 — Seismic",
         "Boss 05 — Battalion", "Boss 06 — Countershade", "Boss 07 — Brandish",
         "Boss 08 — Aviator", "Boss 10 — Tutorial boss"
@@ -785,6 +793,98 @@ public static class Patcher
         return "Turbo saved.";
     }
 
+    // Mirrors the exact Settings that were applied so the launcher can show
+    // the real current state on the next start (ini parsing alone cannot see
+    // Mouse/LAA/Lock and misses fields the game rewrites at runtime).
+    private static string PcSettingsPath(string gameDir) =>
+        Path.Combine(gameDir, ".mn9patcher", "pc-settings.ini");
+
+    public static void SavePcSettings(string gameDir, Settings s)
+    {
+        try
+        {
+            string path = PcSettingsPath(gameDir);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllLines(path, new[]
+            {
+                "resx=" + s.Width,
+                "resy=" + s.Height,
+                "fullscreen=" + (s.Fullscreen ? 1 : 0),
+                "vsync=" + (s.Vsync ? 1 : 0),
+                "shadows=" + (s.Shadows ? 1 : 0),
+                "bloom=" + (s.Bloom ? 1 : 0),
+                "motionblur=" + (s.MotionBlur ? 1 : 0),
+                "lightshafts=" + (s.LightShafts ? 1 : 0),
+                "distortion=" + (s.Distortion ? 1 : 0),
+                "lensflares=" + (s.LensFlares ? 1 : 0),
+                "ao=" + (s.AmbientOcclusion ? 1 : 0),
+                "mlaa=" + (s.Mlaa ? 1 : 0),
+                "msaa=" + (s.Msaa ? 1 : 0),
+                "retro=" + (s.RetroTextures ? 1 : 0),
+                "voice=" + (s.Voice ? 1 : 0),
+                "movies=" + (s.Movies ? 1 : 0),
+                "mouse=" + (s.MouseFix ? 1 : 0),
+                "laa=" + (s.Laa ? 1 : 0),
+                "lock=" + (s.LockConfig ? 1 : 0),
+                "fps=" + s.Fps,
+                "pool=" + s.Pool,
+                "physics=" + s.Physics,
+            });
+        }
+        catch { }
+    }
+
+    public static Settings ReadPcSettings(string gameDir)
+    {
+        var s = new Settings();
+        try
+        {
+            string path = PcSettingsPath(gameDir);
+            if (File.Exists(path))
+            {
+                foreach (string raw in File.ReadAllLines(path))
+                {
+                    int eq = raw.IndexOf('=');
+                    if (eq <= 0) continue;
+                    string k = raw[..eq].Trim().ToLowerInvariant();
+                    string v = raw[(eq + 1)..].Trim();
+                    bool on = v is "1" or "true" or "True";
+                    int.TryParse(v, out int n);
+                    switch (k)
+                    {
+                        case "resx": s.Width = n; break;
+                        case "resy": s.Height = n; break;
+                        case "fullscreen": s.Fullscreen = on; break;
+                        case "vsync": s.Vsync = on; break;
+                        case "shadows": s.Shadows = on; break;
+                        case "bloom": s.Bloom = on; break;
+                        case "motionblur": s.MotionBlur = on; break;
+                        case "lightshafts": s.LightShafts = on; break;
+                        case "distortion": s.Distortion = on; break;
+                        case "lensflares": s.LensFlares = on; break;
+                        case "ao": s.AmbientOcclusion = on; break;
+                        case "mlaa": s.Mlaa = on; break;
+                        case "msaa": s.Msaa = on; break;
+                        case "retro": s.RetroTextures = on; break;
+                        case "voice": s.Voice = on; break;
+                        case "movies": s.Movies = on; break;
+                        case "mouse": s.MouseFix = on; break;
+                        case "laa": s.Laa = on; break;
+                        case "lock": s.LockConfig = on; break;
+                        case "fps": s.Fps = n; break;
+                        case "pool": s.Pool = n; break;
+                        case "physics": s.Physics = n; break;
+                    }
+                }
+                return s;
+            }
+        }
+        catch { }
+        var (fps, pool, physics) = ReadPcTuning(gameDir);
+        s.Fps = fps; s.Pool = pool; s.Physics = physics;
+        return s;
+    }
+
     public static (int Fps, int Pool, int Physics) ReadPcTuning(string gameDir)
     {
         int fps = 62, pool = 256, physics = 5;
@@ -872,8 +972,9 @@ public static class Patcher
         {
             "gold" => "Golden Beck",
             "retro" => "Retro Hero",
-            "call" => "Call skin",
-            "ray" => "Ray skin",
+            "call" => "Call",
+            "ray" => "Ray",
+            "trinity" => "Trinity (NPC)",
             "megaxel" => "MegaXel form",
             _ => "Beck",
         };
@@ -921,12 +1022,13 @@ AUDIO="$(dirname "$FX")/libaudiofx.so"
 char="beck"
 if [ -f "$CONF" ]; then char="$(head -n1 "$CONF" | tr -d '[:space:]')"; fi
 case "$char" in
-  gold|retro|beck|call|ray|megaxel) ;;
+  gold|retro|beck|call|ray|trinity|megaxel) ;;
   *) char="beck" ;;
 esac
 skin=""
 case "$char" in
-  call|ray) skin="$char"; char="beck" ;;
+  call|ray) ;;                                     # native pawn + controller
+  trinity) char="beck" ;;                          # Trinity package keeps Beck's pawn
   megaxel) char="beck"; LIB="$GAME/.mn9charsel/libmn9spawn_megaxel.so" ;;
 esac
 export MN9_CHARACTER="$char"
@@ -951,7 +1053,7 @@ export MN9_DISABLE_DIALOG="${dialog:-0}"
 export MN9_CEL_SHADING="${cel:-0}"
 export MN9_FXAA="${fxaa:-1}"
 AC="$GAME/.mn9charsel/audio.conf"
-audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; avp=1; avpr=0; avr=0; amg=1; asg=1; avg=1; aduck=1; anight=0
+audio=0; amusic=game; adir=""; amap=""; apitch=0; avoice=game; avp=1; avpr=0; avr=0; amg=1; asg=1; avg=1; aduck=1; anight=0; atv=game; amv=both
 if [ -f "$AC" ]; then
   audio="$(sed -n 's/^enabled=//p' "$AC" | tail -n1)"
   amusic="$(sed -n 's/^music=//p' "$AC" | tail -n1)"
@@ -967,6 +1069,8 @@ if [ -f "$AC" ]; then
   avg="$(sed -n 's/^voice_gain=//p' "$AC" | tail -n1)"
   aduck="$(sed -n 's/^duck=//p' "$AC" | tail -n1)"
   anight="$(sed -n 's/^night=//p' "$AC" | tail -n1)"
+  atv="$(sed -n 's/^title_voice=//p' "$AC" | tail -n1)"
+  amv="$(sed -n 's/^music_variant=//p' "$AC" | tail -n1)"
 fi
 case "$strength" in
   noir)       export MN9_POSTFX_MODE=noir ;;
@@ -1004,6 +1108,9 @@ if [ "${audio:-0}" = "1" ] && [ -f "$AUDIO" ]; then
   export MN9_AUDIO_MUSIC_GAIN="${amg:-1}"
   export MN9_AUDIO_SFX_GAIN="${asg:-1}"
   export MN9_AUDIO_VOICE_GAIN="${avg:-1}"
+  export MN9_TITLE_VOICE="${atv:-game}"
+  export MN9_AUDIO_MUSIC_VARIANT="${amv:-both}"
+  export MN9_TITLE_VOICE_DIR="$GAME/.mn9charsel/titlevoices"
   export MN9_AUDIO_MUSIC_MAP="${amap:-}"
   export MN9_AUDIO_DUCK="${aduck:-1}"
   export MN9_AUDIO_NIGHT="${anight:-0}"
@@ -1038,19 +1145,18 @@ if [ -n "${LD_PRELOAD:-}" ]; then
 else
   export LD_PRELOAD="$PRELOAD"
 fi
-if [ "$#" -gt 0 ]; then
-  exec "$HERE/MN9Game.bin.x86_64.real" "$@"
-fi
 START_MAP=""
 if [ -f "$GAME/.mn9charsel/start_map" ]; then
   START_MAP="$(head -n1 "$GAME/.mn9charsel/start_map" | tr -d '[:space:]')"
   rm -f "$GAME/.mn9charsel/start_map"
 fi
 if [ -n "$START_MAP" ]; then
-  exec "$HERE/MN9Game.bin.x86_64.real" "$START_MAP"
-else
-  exec "$HERE/MN9Game.bin.x86_64.real"
+  exec "$HERE/MN9Game.bin.x86_64.real" "$START_MAP" "$@"
 fi
+if [ "$#" -gt 0 ]; then
+  exec "$HERE/MN9Game.bin.x86_64.real" "$@"
+fi
+exec "$HERE/MN9Game.bin.x86_64.real"
 """;
 
     private static bool IsBinaryShim(string path)
@@ -1160,7 +1266,7 @@ fi
         string megaxel = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9spawn_megaxel.so");
         if (File.Exists(megaxel))
             InstallFile(megaxel, Path.Combine(destDir, "libmn9spawn_megaxel.so"));
-        // Call/Ray skins are applied by the skin shim loaded by the wrapper.
+        // Legacy mesh skin shim (kept for older configs; Call/Ray no longer use it).
         string skinlib = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9skin.so");
         if (File.Exists(skinlib))
             InstallFile(skinlib, Path.Combine(destDir, "libmn9skin.so"));
@@ -1178,6 +1284,7 @@ fi
         string afx = Path.Combine(Path.GetDirectoryName(source) ?? "", "libaudiofx.so");
         if (File.Exists(afx))
             InstallFile(afx, Path.Combine(destDir, "libaudiofx.so"));
+        InstallTitleVoices(destDir);
         string pal = Path.Combine(Path.GetDirectoryName(source) ?? "", "libmn9palette.so");
         if (File.Exists(pal))
             InstallFile(pal, Path.Combine(destDir, "libmn9palette.so"));
@@ -1196,6 +1303,31 @@ fi
         }
         catch { }
         return dest;
+    }
+
+    // Bundle the extracted title-call voices next to the launcher and copy
+    // them into the game's mod folder so the audio shim can play a chosen line.
+    private static void InstallTitleVoices(string destDir)
+    {
+        string[] candidates =
+        {
+            Path.Combine(AppContext.BaseDirectory, "titlevoices"),
+            Path.Combine(AppContext.BaseDirectory, "..", "assets", "titlevoices"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "assets", "titlevoices"),
+        };
+        foreach (string src in candidates)
+        {
+            try
+            {
+                if (!Directory.Exists(src)) continue;
+                string dest = Path.Combine(destDir, "titlevoices");
+                Directory.CreateDirectory(dest);
+                foreach (string f in Directory.GetFiles(src, "*.ogg"))
+                    InstallFile(f, Path.Combine(dest, Path.GetFileName(f)));
+                return;
+            }
+            catch { }
+        }
     }
 
     public static string InstallModFiles(string gameDir)
@@ -2149,6 +2281,29 @@ internal static class Cli
         }
         if (args.Contains("--install-mod-files"))
         {
+            Console.WriteLine(Patcher.InstallModFiles(game));
+            return 0;
+        }
+        if (Arg(args, "--title-wallpaper") is string twp)
+        {
+            Console.WriteLine(TitleWallpaper.Install(game, twp, !args.Contains("--keep-title-art")));
+            return 0;
+        }
+        if (Arg(args, "--paint-title") is string paintName)
+        {
+            Console.WriteLine(TitleWallpaper.DebugPaint(game, paintName));
+            return 0;
+        }
+        if (args.Contains("--restore-title-wallpaper"))
+        {
+            Console.WriteLine(TitleWallpaper.Restore(game));
+            return 0;
+        }
+        if (Arg(args, "--title-voice") is string tv)
+        {
+            var a = AudioSettings.Read(game);
+            a.TitleVoice = tv;
+            Console.WriteLine(AudioSettings.Write(game, a));
             Console.WriteLine(Patcher.InstallModFiles(game));
             return 0;
         }
